@@ -1,4 +1,4 @@
-// Content Moderation Engine for CampusEcho
+// Content Moderation Engine for SpillATea
 
 // Extensible list of offensive terms to mask
 const PROFANITY_PATTERNS = [

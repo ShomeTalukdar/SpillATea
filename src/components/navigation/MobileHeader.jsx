@@ -1,28 +1,36 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { BrandWordmark, IconSearch, IconNotifications } from '../icons/Icons';
+import { BrandWordmark, IconSearch, IconSettings } from '../icons/Icons';
 
 export default function MobileHeader() {
   return (
-    <header className="md:hidden sticky top-0 z-30 bg-[#151518]/95 backdrop-blur-md border-b border-[#2A2A2F] px-4 py-3 flex items-center justify-between">
+    <header 
+      className="md:hidden sticky top-0 z-30 border-b px-4 py-3 flex items-center justify-between"
+      style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)' }}
+    >
       <Link to="/" className="outline-none">
-        <BrandWordmark />
+        <BrandWordmark size={22} />
       </Link>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1">
         <Link 
           to="/search" 
-          className="text-[#A0A0A8] hover:text-[#F0F0F2] p-1.5 rounded-md hover:bg-[#1C1C20] transition-smooth"
+          className="w-9 h-9 flex items-center justify-center rounded-[6px] transition-fast"
+          style={{ color: 'var(--text-tertiary)' }}
+          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+          onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-tertiary)'}
           aria-label="Search"
         >
-          <IconSearch size={19} />
+          <IconSearch size={18} />
         </Link>
         <Link 
-          to="/notifications" 
-          className="text-[#A0A0A8] hover:text-[#F0F0F2] p-1.5 rounded-md hover:bg-[#1C1C20] transition-smooth relative"
-          aria-label="Notifications"
+          to="/settings" 
+          className="w-9 h-9 flex items-center justify-center rounded-[6px] transition-fast"
+          style={{ color: 'var(--text-tertiary)' }}
+          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+          onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-tertiary)'}
+          aria-label="Settings"
         >
-          <IconNotifications size={19} />
-          <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-[#F07845]" />
+          <IconSettings size={18} />
         </Link>
       </div>
     </header>
