@@ -1,403 +1,560 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useParams, Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import Sidebar from '../components/navigation/Sidebar';
 import MobileHeader from '../components/navigation/MobileHeader';
 import MobileNav from '../components/navigation/MobileNav';
 import TrendingSidebar from '../components/posts/TrendingSidebar';
+import CreatePostModal from '../components/modals/CreatePostModal';
+import CommandPalette from '../components/modals/CommandPalette';
 import { 
-  IconBack, 
-  AnonymousAvatar, 
-  PublicAvatar, 
-  IconLike, 
-  IconDislike, 
+  IconHeart, 
   IconShare, 
-  IconReport,
-  IconComment,
-  IconClose
+  IconBookmark, 
+  IconCheck, 
+  IconLock, 
+  IconReport, 
+  IconClose,
+  IconTrash
 } from '../components/icons/Icons';
-import { fetchPostById, fetchComments, addComment, reactToPost, recordPostShare } from '../services/db';
-import { formatRelativeTime } from '../utils/time';
+
+import { fetchPostById, fetchComments, addComment, toggleLikeConfession, toggleSaveConfession, deleteConfession } from '../services/db';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import ReportModal from '../components/modals/ReportModal';
 
 export default function PostPage() {
   const { postNumber } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const { user, isAdmin } = useAuth();
   const { addToast } = useToast();
+
+  const commentInputRef = useRef(null);
 
   const [post, setPost] = useState(null);
   const [comments, setComments] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLiked, setIsLiked] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [likesCount, setLikesCount] = useState(0);
+  const [likeScale, setLikeScale] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  // New comment states
-  const [newCommentText, setNewCommentText] = useState('');
-  const [isAnonComment, setIsAnonComment] = useState(true);
-  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
-  const [replyingToCommentId, setReplyingToCommentId] = useState(null);
+  // Modals & palette
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCommandOpen, setIsCommandOpen] = useState(false);
 
-  // Report modal
-  const [isReportOpen, setIsReportOpen] = useState(false);
+  // New comment
+  const [replyText, setReplyText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     async function loadPostAndComments() {
       setIsLoading(true);
       try {
-        const foundPost = await fetchPostById(postNumber);
-        if (foundPost) {
-          setPost(foundPost);
-          const comms = await fetchComments(foundPost.id);
-          setComments(comms);
+        const found = await fetchPostById(postNumber);
+        if (found) {
+          setPost(found);
+          setLikesCount(found.likes || 0);
+          setIsLiked(Boolean(found.is_liked));
+          setIsSaved(Boolean(found.is_saved));
+          const comms = await fetchComments(found.id);
+          setComments(comms || []);
         } else {
           setPost(null);
         }
       } catch (err) {
-        console.error('Failed to load post', err);
+        console.error('Failed to load confession', err);
       } finally {
         setIsLoading(false);
       }
     }
     loadPostAndComments();
-  }, [postNumber]);
+  }, [postNumber, isAdmin]);
+
+  // Automatically scroll and focus the comment input when opened from comment button
+  useEffect(() => {
+    if (!isLoading && post) {
+      const shouldComment = searchParams.get('comment') === 'true' || location.state?.focusComment;
+      if (shouldComment && commentInputRef.current) {
+        setTimeout(() => {
+          commentInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          commentInputRef.current?.focus();
+        }, 120);
+      }
+    }
+  }, [isLoading, post, searchParams, location]);
+
+  const handleSave = async () => {
+    if (!post) return;
+    const nextSaved = !isSaved;
+    setIsSaved(nextSaved);
+    const res = await toggleSaveConfession(post.id);
+    if (!res.success) {
+      setIsSaved(!nextSaved);
+    } else {
+      addToast(nextSaved ? 'Saved to your collection' : 'Removed from collection', 'success');
+    }
+  };
 
   const handleLike = async () => {
     if (!post) return;
-    try {
-      const res = await reactToPost(post.id, 'like');
-      if (res.success) {
-        setPost(prev => ({
-          ...prev,
-          likes: res.likes,
-          dislikes: res.dislikes,
-          user_reaction: res.user_reaction
-        }));
-      }
-    } catch (e) {
-      console.error(e);
+    setLikeScale(true);
+    setTimeout(() => setLikeScale(false), 200);
+
+    const prevLiked = isLiked;
+    const prevCount = likesCount;
+
+    setIsLiked(!prevLiked);
+    setLikesCount(prevLiked ? Math.max(0, prevCount - 1) : prevCount + 1);
+
+    const res = await toggleLikeConfession(post.id);
+    if (!res.success) {
+      setIsLiked(prevLiked);
+      setLikesCount(prevCount);
     }
   };
 
-  const handleDislike = async () => {
-    if (!post) return;
-    try {
-      const res = await reactToPost(post.id, 'dislike');
-      if (res.success) {
-        setPost(prev => ({
-          ...prev,
-          likes: res.likes,
-          dislikes: res.dislikes,
-          user_reaction: res.user_reaction
-        }));
-      }
-    } catch (e) {
-      console.error(e);
+  const handleCopyShareLink = () => {
+    const shareUrl = window.location.href;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(shareUrl);
+      setCopiedLink(true);
+      addToast('sharable link copied to clipboard', 'success');
+      setTimeout(() => setCopiedLink(false), 2500);
     }
   };
 
-  const handleShare = async () => {
-    if (!post) return;
-    const url = window.location.href;
-    try {
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(url);
-        addToast(`Canonical link copied to clipboard.`, 'success');
-      } else {
-        addToast(`Link: ${url}`, 'info');
-      }
-      recordPostShare(post.id);
-    } catch (e) {
-      addToast('Failed to copy link.', 'error');
-    }
-  };
-
-  const handleAddComment = async (e) => {
+  const handleAddReply = async (e) => {
     e.preventDefault();
-    if (!newCommentText.trim() || isSubmittingComment || !post) return;
+    if (!replyText.trim() || isSubmitting) return;
 
-    setIsSubmittingComment(true);
+    setIsSubmitting(true);
     try {
       const res = await addComment({
         postId: post.id,
-        content: newCommentText.trim(),
-        is_anonymous: isAnonComment,
-        parent_id: replyingToCommentId
+        content: replyText.trim(),
+        is_anonymous: true
       });
 
       if (res.success) {
         setComments(prev => [...prev, res.comment]);
-        setNewCommentText('');
-        setReplyingToCommentId(null);
-        setPost(prev => ({ ...prev, comment_count: (prev.comment_count || 0) + 1 }));
-        addToast('Comment added.', 'success');
+        setReplyText('');
+        addToast('anonymous reply posted', 'success');
       } else {
-        addToast(res.error || 'Failed to post comment.', 'error');
+        addToast(res.error || 'failed to post reply', 'error');
       }
     } catch (err) {
-      addToast('Error posting comment.', 'error');
+      addToast('error posting reply', 'error');
     } finally {
-      setIsSubmittingComment(false);
+      setIsSubmitting(false);
+    }
+  };
+
+  const canDelete = Boolean(post?.can_delete || isAdmin || post?.is_own);
+
+  const handleDeletePost = async () => {
+    setIsDeleting(true);
+    const res = await deleteConfession(post.id);
+    setIsDeleting(false);
+    if (res && res.success) {
+      addToast('Confession deleted', 'success');
+      navigate('/');
+    } else {
+      addToast(res?.error || 'Failed to delete confession', 'error');
     }
   };
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen bg-[#0D0D0F] text-[#F0F0F2]">
-        <Sidebar />
-        <div className="flex-1 flex justify-center items-center p-6">
-          <div className="w-8 h-8 border-2 border-[#F07845] border-t-transparent rounded-full animate-spin" />
+      <div className="flex min-h-screen bg-[#0A0A0A] text-[#EDEDED]">
+        <Sidebar onOpenCreateModal={() => setIsCreateOpen(true)} onOpenCommandPalette={() => setIsCommandOpen(true)} />
+        <div className="flex-1 flex justify-center items-center font-mono text-[13px] text-[#6B6B6B]">
+          loading confession...
         </div>
-        <MobileNav />
       </div>
     );
   }
 
   if (!post) {
     return (
-      <div className="flex min-h-screen bg-[#0D0D0F] text-[#F0F0F2]">
-        <Sidebar />
+      <div className="flex min-h-screen bg-[#0A0A0A] text-[#EDEDED]">
+        <Sidebar onOpenCreateModal={() => setIsCreateOpen(true)} onOpenCommandPalette={() => setIsCommandOpen(true)} />
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-          <h2 className="text-lg font-semibold mb-2">Discussion Not Found</h2>
-          <p className="text-xs text-[#777780] mb-4">Post #{postNumber} does not exist or may have been removed.</p>
-          <Link to="/" className="px-4 py-2 bg-[#1C1C20] border border-[#2A2A2F] text-xs font-medium rounded-lg hover:text-[#F07845] transition-smooth">
-            Return to Community Feed
+          <span className="text-[16px] text-[#EDEDED] font-medium mb-1">Confession not found</span>
+          <span className="text-[13px] text-[#6B6B6B] mb-5 font-mono">
+            Confession #{postNumber} does not exist or was deleted.
+          </span>
+          <Link to="/" className="text-[13px] text-[#FF5A1F] hover:underline font-mono">
+            ← Return to Today's confessions
           </Link>
         </div>
-        <MobileNav />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-[#0D0D0F] text-[#F0F0F2]">
-      <Sidebar />
+    <div 
+      className="flex min-h-screen"
+      style={{ backgroundColor: 'var(--bg)', color: 'var(--text-primary)' }}
+    >
+      <Sidebar 
+        onOpenCreateModal={() => setIsCreateOpen(true)}
+        onOpenCommandPalette={() => setIsCommandOpen(true)}
+      />
 
-      <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-8">
+      <div className="flex-1 flex flex-col min-w-0 pb-16 md:pb-8">
         <MobileHeader />
 
-        <main className="flex-1 flex justify-center px-3 sm:px-6 py-6">
-          <div className="w-full max-w-2xl flex flex-col gap-6 text-left">
-            {/* Top Navigation Bar */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#2A2A2F]">
+        <main className="flex-1 flex justify-center px-4 sm:px-6 py-6 sm:py-8">
+          <div className="w-full max-w-[560px] flex flex-col gap-6 text-left">
+            
+            {/* Top Navigation & Share Link Row */}
+            <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: 'var(--border)' }}>
               <Link
                 to="/"
-                className="flex items-center gap-2 text-xs font-medium text-[#A0A0A8] hover:text-[#F0F0F2] transition-smooth"
+                className="flex items-center gap-1.5 text-[12px] font-mono transition-colors"
+                style={{ color: 'var(--text-secondary)' }}
+                onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
               >
-                <IconBack size={16} />
-                <span>Back to Feed</span>
+                <span>←</span>
+                <span>Today's confessions</span>
               </Link>
-              <span className="text-xs font-mono font-medium text-[#F07845] bg-[#1C1C20] px-2 py-0.5 rounded border border-[#2A2A2F]">
-                {post.post_number_formatted}
-              </span>
+
+              {/* Sharable link button */}
+              <button
+                type="button"
+                onClick={handleCopyShareLink}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-[6px] border text-[11px] font-mono transition-colors cursor-pointer"
+                style={{ 
+                  backgroundColor: copiedLink ? 'rgba(16, 185, 129, 0.1)' : 'var(--surface)',
+                  borderColor: copiedLink ? '#10B981' : 'var(--border)',
+                  color: copiedLink ? '#10B981' : 'var(--text-secondary)'
+                }}
+                title="Copy sharable page URL"
+              >
+                {copiedLink ? <IconCheck size={12} /> : <IconShare size={12} />}
+                <span>{copiedLink ? 'Link copied' : 'Share link'}</span>
+              </button>
             </div>
 
-            {/* Post Detail Card */}
-            <article className="bg-[#151518] border border-[#2A2A2F] rounded-xl p-5 sm:p-6 flex flex-col gap-4">
+            {/* Confession Hero Card */}
+            <article 
+              className="w-full rounded-[12px] p-6 sm:p-8 border shadow-none"
+              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+            >
               {/* Meta row */}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-3">
-                  {post.is_anonymous ? (
-                    <AnonymousAvatar size={38} />
-                  ) : (
-                    <PublicAvatar name={post.author_name} size={38} />
-                  )}
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-[#F0F0F2]">
-                      {post.is_anonymous ? 'Anonymous Student' : post.author_name}
-                    </span>
-                    <span className="text-xs text-[#777780]">
-                      {formatRelativeTime(post.created_at)}
-                    </span>
-                  </div>
-                </div>
-
-                <span className="text-xs font-medium text-[#A0A0A8] bg-[#1C1C20] border border-[#2A2A2F] px-3 py-1 rounded-full">
-                  {post.category}
-                </span>
-              </div>
-
-              {/* Title & Content */}
-              <div className="flex flex-col gap-3">
-                <h1 className="text-lg sm:text-xl font-semibold text-[#F0F0F2] leading-snug">
-                  {post.title}
-                </h1>
-                <div className="text-sm text-[#F0F0F2]/90 leading-relaxed whitespace-pre-line">
-                  {post.content}
-                </div>
-              </div>
-
-              {/* Action row */}
-              <div className="flex items-center justify-between pt-4 border-t border-[#2A2A2F] text-xs text-[#777780]">
-                {/* Reaction controls */}
-                <div className="flex items-center gap-1 bg-[#1C1C20] border border-[#2A2A2F] rounded-lg p-1">
-                  <button
-                    type="button"
-                    onClick={handleLike}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded transition-smooth cursor-pointer ${
-                      post.user_reaction === 'like'
-                        ? 'text-[#F07845] bg-[#2A2A2F]/60'
-                        : 'hover:text-[#F0F0F2] hover:bg-[#2A2A2F]/30'
-                    }`}
-                  >
-                    <IconLike size={16} active={post.user_reaction === 'like'} />
-                    <span className="font-semibold text-xs text-[#F0F0F2]">{post.likes}</span>
-                  </button>
-                  <div className="w-[1px] h-3.5 bg-[#2A2A2F]" />
-                  <button
-                    type="button"
-                    onClick={handleDislike}
-                    className={`flex items-center gap-1 px-2 py-1 rounded transition-smooth cursor-pointer ${
-                      post.user_reaction === 'dislike'
-                        ? 'text-[#A0A0A8] bg-[#2A2A2F]/60'
-                        : 'hover:text-[#F0F0F2] hover:bg-[#2A2A2F]/30'
-                    }`}
-                  >
-                    <IconDislike size={16} active={post.user_reaction === 'dislike'} />
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleShare}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1C1C20] border border-[#2A2A2F] text-[#A0A0A8] hover:text-[#F0F0F2] transition-smooth cursor-pointer"
-                  >
-                    <IconShare size={15} />
-                    <span>Share</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsReportOpen(true)}
-                    className="p-2 rounded-lg bg-[#1C1C20] border border-[#2A2A2F] text-[#777780] hover:text-[#E36B73] transition-smooth cursor-pointer"
-                    title="Report discussion"
-                  >
-                    <IconReport size={15} />
-                  </button>
-                </div>
-              </div>
-            </article>
-
-            {/* Comment Section Header */}
-            <div className="flex items-center justify-between pt-2">
-              <h2 className="text-sm font-semibold text-[#F0F0F2] flex items-center gap-2">
-                <IconComment size={16} className="text-[#F07845]" />
-                <span>Discussion ({comments.length})</span>
-              </h2>
-            </div>
-
-            {/* Add Comment Input Form */}
-            <form onSubmit={handleAddComment} className="flex flex-col gap-3 bg-[#151518] border border-[#2A2A2F] rounded-xl p-4">
-              <div className="flex items-center justify-between text-xs pb-2 border-b border-[#2A2A2F]">
-                <div className="flex items-center gap-2">
-                  {isAnonComment ? <AnonymousAvatar size={24} /> : <PublicAvatar name={user.name} size={24} />}
-                  <span className="text-[#A0A0A8]">
-                    Commenting as: <span className="text-[#F0F0F2] font-medium">{isAnonComment ? 'Anonymous Student' : user.name}</span>
+              <div 
+                className="flex items-center justify-between text-[12px] font-mono mb-5 pb-1 border-b"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="font-medium tracking-wide" style={{ color: 'var(--text-primary)' }}>
+                    {post.confession_number}
+                  </span>
+                  <span style={{ color: 'var(--border-strong)' }}>·</span>
+                  <span className="uppercase tracking-wider text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                    {post.category}
                   </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsAnonComment(!isAnonComment)}
-                  className="text-[11px] text-[#F07845] hover:underline cursor-pointer"
-                >
-                  Switch to {isAnonComment ? 'Public Name' : 'Anonymous'}
-                </button>
+                <span style={{ color: 'var(--text-tertiary)' }}>
+                  {post.time_formatted || post.exact_time}
+                </span>
               </div>
 
-              {replyingToCommentId && (
-                <div className="flex items-center justify-between px-2.5 py-1.5 bg-[#1C1C20] rounded text-xs text-[#A0A0A8]">
-                  <span>Replying to comment thread</span>
+              {/* Automatic Moderator Identity Visibility */}
+              {isAdmin && (post.real_author_name || post.real_author_email) && (
+                <div 
+                  className="mb-4 px-3.5 py-2.5 rounded-[6px] border flex items-center justify-between text-[11.5px] font-mono"
+                  style={{ 
+                    backgroundColor: 'var(--surface-sunken)', 
+                    borderColor: 'var(--border-strong)' 
+                  }}
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
+                    <span style={{ color: 'var(--text-tertiary)' }}>Poster:</span>
+                    <span className="font-semibold text-[13px]" style={{ color: 'var(--text-primary)' }}>{post.real_author_name}</span>
+                    <span style={{ color: 'var(--border-strong)' }}>·</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{post.real_author_email}</span>
+                  </div>
+                  <span 
+                    className="text-[10px] uppercase tracking-wider font-semibold"
+                    style={{ color: 'var(--accent-text)' }}
+                  >
+                    MOD VIEW
+                  </span>
+                </div>
+              )}
+
+              {/* Target Line */}
+              {post.to_target && (
+                <div className="mb-4">
+                  <span 
+                    className="font-mono text-[13px] tracking-wide inline-block border-l-2 pl-2.5"
+                    style={{ borderColor: 'var(--accent)', color: 'var(--text-secondary)' }}
+                  >
+                    {post.to_target}
+                  </span>
+                </div>
+              )}
+
+              {/* Confession Body */}
+              <div className="mb-6">
+                <p 
+                  className="font-confession text-[20px] sm:text-[21px] leading-[1.6] font-normal whitespace-pre-line tracking-[-0.01em]"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  {post.body || post.content}
+                </p>
+              </div>
+
+              {/* Hairline Separator */}
+              <div className="h-[1px] w-full mb-4" style={{ backgroundColor: 'var(--border)' }} />
+
+              {/* Action row */}
+              <div className="flex items-center justify-between text-[13px]">
+                <div className="flex items-center gap-5">
                   <button
                     type="button"
-                    onClick={() => setReplyingToCommentId(null)}
-                    className="text-[#777780] hover:text-[#F0F0F2]"
+                    onClick={handleLike}
+                    className="flex items-center gap-2 py-1 px-2 -ml-2 rounded-[6px] transition-colors cursor-pointer"
+                    style={{ color: isLiked ? 'var(--accent)' : 'var(--text-secondary)' }}
                   >
-                    <IconClose size={13} />
+                    <span className={`inline-block transition-transform duration-160 ${likeScale ? 'scale-125' : 'scale-100'}`}>
+                      <IconHeart size={18} filled={isLiked} />
+                    </span>
+                    <span 
+                      className="font-mono tabular-nums text-[13px]"
+                      style={{ color: isLiked ? 'var(--accent-text)' : 'var(--text-secondary)' }}
+                    >
+                      {likesCount}
+                    </span>
+                  </button>
+
+                  <div className="text-[12px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
+                    {comments.length} responses
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    className="w-9 h-9 flex items-center justify-center rounded-[6px] transition-colors cursor-pointer"
+                    style={{ color: isSaved ? 'var(--accent)' : 'var(--text-tertiary)' }}
+                    onMouseEnter={(e) => { if (!isSaved) e.currentTarget.style.color = 'var(--text-primary)'; }}
+                    onMouseLeave={(e) => { if (!isSaved) e.currentTarget.style.color = 'var(--text-tertiary)'; }}
+                    title={isSaved ? "Saved to your collection" : "Save confession"}
+                  >
+                    <IconBookmark size={18} filled={isSaved} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyShareLink}
+                    className="w-9 h-9 flex items-center justify-center rounded-[6px] transition-colors cursor-pointer"
+                    style={{ color: 'var(--text-tertiary)' }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-tertiary)'}
+                    title="Copy link"
+                  >
+                    <IconShare size={18} />
+                  </button>
+
+                  {canDelete && (
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmDelete(true)}
+                      className="w-9 h-9 flex items-center justify-center rounded-[6px] transition-colors cursor-pointer"
+                      style={{ color: 'var(--text-tertiary)' }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = '#EF4444'}
+                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-tertiary)'}
+                      title={isAdmin && !post.is_own ? "Delete confession (Campus Moderator action)" : "Delete your confession"}
+                    >
+                      <IconTrash size={18} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Inline Delete Confirmation */}
+              {showConfirmDelete && (
+                <div 
+                  className="mt-4 p-3.5 rounded-[8px] border flex items-center justify-between text-[12px] font-mono animate-fadeIn"
+                  style={{ 
+                    backgroundColor: 'var(--surface-sunken)', 
+                    borderColor: 'var(--border-strong)' 
+                  }}
+                >
+                  <span style={{ color: 'var(--text-primary)' }}>
+                    {isAdmin && !post.is_own ? 'Moderator action: Delete this confession?' : 'Delete your confession permanently?'}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmDelete(false)}
+                      className="px-2.5 py-1 rounded border text-[11px] cursor-pointer"
+                      style={{ 
+                        backgroundColor: 'var(--surface)', 
+                        borderColor: 'var(--border)', 
+                        color: 'var(--text-secondary)' 
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeletePost}
+                      disabled={isDeleting}
+                      className="px-2.5 py-1 rounded bg-[#EF4444] hover:bg-[#dc2626] text-white font-medium text-[11px] disabled:opacity-50 cursor-pointer"
+                    >
+                      {isDeleting ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </article>
+
+            {/* Discussion & Responses Section */}
+            <section className="flex flex-col gap-4 mt-2">
+              <div className="flex items-center justify-between border-b pb-2" style={{ borderColor: 'var(--border)' }}>
+                <span className="font-mono text-[11px] uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>
+                  Discussion ({comments.length})
+                </span>
+                <div className="flex items-center gap-2">
+                  {isAdmin && (
+                    <span 
+                      className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border flex items-center gap-1"
+                      style={{ 
+                        backgroundColor: 'rgba(255, 90, 31, 0.1)', 
+                        borderColor: 'rgba(255, 90, 31, 0.25)',
+                        color: 'var(--accent)' 
+                      }}
+                    >
+                      <IconLock size={10} />
+                      <span>Mod Identities Revealed</span>
+                    </span>
+                  )}
+                  <span className="font-mono text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                    Anonymous replies
+                  </span>
+                </div>
+              </div>
+
+              {/* Add Reply Form */}
+              <form 
+                onSubmit={handleAddReply} 
+                className="flex flex-col gap-2 p-4 rounded-[8px] border"
+                style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+              >
+                <textarea
+                  ref={commentInputRef}
+                  rows={3}
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder="Leave an anonymous reply..."
+                  className="w-full rounded-[6px] p-3 text-[13px] border focus:outline-none resize-none transition-colors"
+                  style={{ 
+                    backgroundColor: 'var(--surface-sunken)', 
+                    borderColor: 'var(--border)', 
+                    color: 'var(--text-primary)' 
+                  }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+                />
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[10px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
+                    Replies are completely anonymous
+                  </span>
+                  <button
+                    type="submit"
+                    disabled={!replyText.trim() || isSubmitting}
+                    className="px-4 py-1.5 font-medium text-[12px] rounded-[6px] disabled:opacity-40 transition-opacity cursor-pointer"
+                    style={{ backgroundColor: 'var(--accent)', color: '#141414' }}
+                  >
+                    {isSubmitting ? 'Posting...' : 'Reply'}
                   </button>
                 </div>
-              )}
+              </form>
 
-              <textarea
-                rows={3}
-                required
-                value={newCommentText}
-                onChange={(e) => setNewCommentText(e.target.value)}
-                placeholder="Join the discussion... (Profanity is masked automatically)"
-                className="w-full bg-[#1C1C20] border border-[#2A2A2F] rounded-lg p-3 text-xs text-[#F0F0F2] placeholder-[#777780] focus:border-[#F07845] outline-none resize-none transition-smooth leading-relaxed"
-              />
-
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={!newCommentText.trim() || isSubmittingComment}
-                  className="px-4 py-2 bg-[#F07845] hover:bg-[#e06b3a] disabled:opacity-40 disabled:cursor-not-allowed text-[#0D0D0F] font-semibold text-xs rounded-lg transition-smooth cursor-pointer"
-                >
-                  {isSubmittingComment ? 'Posting...' : 'Post Reply'}
-                </button>
-              </div>
-            </form>
-
-            {/* Comment Thread List */}
-            <div className="flex flex-col gap-3">
-              {comments.length === 0 ? (
-                <div className="p-8 text-center bg-[#151518] border border-[#2A2A2F] rounded-xl text-xs text-[#777780]">
-                  No replies yet. Be the first to share your perspective.
-                </div>
-              ) : (
-                comments.map((comment) => (
-                  <div
-                    key={comment.id}
-                    className="p-4 bg-[#151518] border border-[#2A2A2F] rounded-xl flex flex-col gap-2.5 text-left"
-                  >
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        {comment.is_anonymous ? (
-                          <AnonymousAvatar size={26} />
-                        ) : (
-                          <PublicAvatar name={comment.author_name} size={26} />
-                        )}
-                        <span className="font-semibold text-[#F0F0F2]">
-                          {comment.is_anonymous ? 'Anonymous Student' : comment.author_name}
-                        </span>
-                        <span className="text-[#777780] text-[11px]">
-                          {formatRelativeTime(comment.created_at)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-[#A0A0A8] leading-relaxed pl-8">
-                      {comment.content}
-                    </p>
-
-                    <div className="flex items-center gap-4 pl-8 pt-1 text-[11px] text-[#777780]">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReplyingToCommentId(comment.id);
-                          window.scrollTo({ top: 400, behavior: 'smooth' });
-                        }}
-                        className="hover:text-[#F0F0F2] transition-smooth cursor-pointer"
-                      >
-                        Reply
-                      </button>
-                    </div>
+              {/* Comments List */}
+              <div className="flex flex-col divide-y mt-2" style={{ borderColor: 'var(--border)' }}>
+                {comments.length === 0 ? (
+                  <div className="py-12 text-center text-[13px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
+                    No responses yet. Be the first to reply.
                   </div>
-                ))
-              )}
-            </div>
+                ) : (
+                  comments.map((comment) => (
+                    <div 
+                      key={comment.id} 
+                      className="py-4 flex flex-col gap-2 text-left border-b last:border-b-0"
+                      style={{ borderColor: 'var(--border)' }}
+                    >
+                      {/* Comment Meta Row */}
+                      <div className="flex items-center justify-between text-[11px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
+                        <span className="font-medium" style={{ color: 'var(--text-secondary)' }}>{comment.author_name}</span>
+                        <span className="whitespace-nowrap shrink-0">{comment.created_at}</span>
+                      </div>
+
+                      {/* Moderator Reveal: Always below Anonymous Student */}
+                      {isAdmin && (comment.real_author_name || comment.real_author_email) && (
+                        <div className="flex items-center">
+                          <span 
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border"
+                            style={{ 
+                              backgroundColor: 'rgba(255, 90, 31, 0.08)', 
+                              borderColor: 'rgba(255, 90, 31, 0.25)',
+                              color: 'var(--accent)'
+                            }}
+                            title="Campus Moderator confidential identity reveal"
+                          >
+                            <IconLock size={10} />
+                            <span>mod reveal:</span>
+                            <strong className="text-[11.5px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                              {comment.real_author_name}
+                            </strong>
+                            {comment.real_author_email && (
+                              <span style={{ color: 'var(--text-secondary)' }}>
+                                ({comment.real_author_email})
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      )}
+
+                      <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-primary)' }}>
+                        {comment.content}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
           </div>
         </main>
       </div>
 
       <TrendingSidebar />
-      <MobileNav />
+      <MobileNav onOpenCreate={() => setIsCreateOpen(true)} />
 
-      {/* Report Modal */}
-      <ReportModal
-        post={post}
-        isOpen={isReportOpen}
-        onClose={() => setIsReportOpen(false)}
+      <CreatePostModal
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onPostCreated={(newC) => {
+          if (newC) window.location.href = `/post/${newC.id}`;
+        }}
+      />
+
+      <CommandPalette
+        isOpen={isCommandOpen}
+        onClose={() => setIsCommandOpen(false)}
+        onOpenCreate={() => setIsCreateOpen(true)}
       />
     </div>
   );

@@ -1,4 +1,4 @@
--- CampusEcho Database Schema & Security Policies
+-- SpillATea Database Schema & Security Policies
 -- PostgreSQL Migration for Supabase
 
 -- 1. Create sequential post numbering sequence

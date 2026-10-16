@@ -7,7 +7,7 @@ import { IconBack, IconLock } from '../components/icons/Icons';
 
 export default function PrivacyPage() {
   return (
-    <div className="flex min-h-screen bg-[#0D0D0F] text-[#F0F0F2]">
+    <div className="flex min-h-screen bg-[#050506] text-[#F5F5F5]">
       <Sidebar />
 
       <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-8">
@@ -17,21 +17,21 @@ export default function PrivacyPage() {
           <article className="w-full max-w-2xl flex flex-col gap-6 text-left leading-relaxed">
             <Link
               to="/"
-              className="flex items-center gap-2 text-xs font-medium text-[#A0A0A8] hover:text-[#F0F0F2] transition-smooth mb-2"
+              className="flex items-center gap-2 text-xs font-medium text-[#92929A] hover:text-[#F5F5F5] transition-smooth mb-2"
             >
               <IconBack size={16} />
               <span>Back to Campus Feed</span>
             </Link>
 
-            <div className="flex flex-col gap-1 pb-4 border-b border-[#2A2A2F]">
-              <h1 className="text-2xl font-bold text-[#F0F0F2]">Privacy Policy</h1>
-              <p className="text-xs text-[#777780]">Effective Date: October 2026. Version 1.0</p>
+            <div className="flex flex-col gap-1 pb-4 border-b border-white/[0.07]">
+              <h1 className="text-2xl font-bold text-[#F5F5F5]">Privacy Policy</h1>
+              <p className="text-xs text-[#92929A]">Effective Date: October 2026. Version 2.0</p>
             </div>
 
             <section className="flex flex-col gap-2">
               <h2 className="text-base font-semibold text-[#F0F0F2]">1. Information We Collect</h2>
               <p className="text-xs text-[#A0A0A8]">
-                To verify college student status and operate the platform securely, CampusEcho collects your institutional email address (e.g., student@college.edu), public display name, account credentials, and timestamped actions such as posted submissions and reaction interactions.
+                To verify college student status and operate the platform securely, SpillATea collects your institutional email address (e.g., student@college.edu), public display name, account credentials, and timestamped actions such as posted submissions and reaction interactions.
               </p>
             </section>
 

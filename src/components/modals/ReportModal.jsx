@@ -41,16 +41,16 @@ export default function ReportModal({ post, isOpen, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-fade-in">
       <div 
-        className="w-full max-w-md bg-[#151518] border border-[#2A2A2F] rounded-xl shadow-2xl p-5 flex flex-col gap-4 text-left text-[#F0F0F2]"
+        className="w-full max-w-md bg-[#0D0D10] border border-white/[0.08] rounded-2xl shadow-2xl p-6 flex flex-col gap-4 text-left text-[#F5F5F5]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-[#2A2A2F]">
+        <div className="flex items-center justify-between pb-3 border-b border-white/[0.07]">
           <div className="flex items-center gap-2">
-            <IconAlert size={18} className="text-[#E36B73]" />
-            <h2 className="text-base font-semibold text-[#F0F0F2]">Report Post {post.post_number_formatted}</h2>
+            <IconAlert size={18} className="text-[#E06C75]" />
+            <h2 className="text-base font-semibold text-[#F5F5F5]">Report Post {post.post_number_formatted}</h2>
           </div>
           <button
             onClick={onClose}

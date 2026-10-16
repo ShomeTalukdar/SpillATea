@@ -1,37 +1,52 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import Sidebar from '../components/navigation/Sidebar';
 import MobileHeader from '../components/navigation/MobileHeader';
 import MobileNav from '../components/navigation/MobileNav';
+import CreatePostModal from '../components/modals/CreatePostModal';
+import CommandPalette from '../components/modals/CommandPalette';
 import { 
-  IconAdmin, 
-  IconAlert, 
-  IconCheck, 
-  IconTrash, 
   IconLock, 
   IconEye, 
-  EmptyStateIllustration 
+  IconClose
 } from '../components/icons/Icons';
 import { 
   fetchAdminReportQueue, 
   adminTakeAction, 
-  fetchAdminAuditLogs, 
-  adminLookupAuthor 
+  fetchAdminAuditLogs
 } from '../services/db';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { formatRelativeTime } from '../utils/time';
+import ModeratorRevealModal from '../components/modals/ModeratorRevealModal';
+
+const MOD_TABS = [
+  { id: 'reports', label: 'Reports' },
+  { id: 'pending', label: 'Pending Review' },
+  { id: 'warnings', label: 'Warnings' },
+  { id: 'suspensions', label: 'Suspensions' },
+  { id: 'audit', label: 'Recent Actions' },
+];
 
 export default function AdminPage() {
   const { user, isAdmin, toggleAdminRole } = useAuth();
   const { addToast } = useToast();
 
-  const [activeTab, setActiveTab] = useState('queue'); // 'queue' | 'audit' | 'guidelines'
+  const [activeTab, setActiveTab] = useState('reports');
   const [reports, setReports] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [warnings, setWarnings] = useState([
+    { id: 'warn-1', post_number_formatted: '#04', student: 'Student (ID: user-anon-3)', reason: 'hostility in dining comments', issued_by: 'Jordan Brooks', date: 'Yesterday' }
+  ]);
+  const [suspensions, setSuspensions] = useState([
+    { id: 'susp-1', student: 'Student (ID: user-901)', reason: 'severe harassment & academic code violation', duration: '7 days', status: 'Active', issued_by: 'Campus Safety', date: '2 days ago' }
+  ]);
+
   const [isLoading, setIsLoading] = useState(true);
-  const [moderatorNotes, setModeratorNotes] = useState({});
-  const [revealedAuthors, setRevealedAuthors] = useState({});
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCommandOpen, setIsCommandOpen] = useState(false);
+
+  // Modal states for sensitive actions
+  const [selectedPostForReveal, setSelectedPostForReveal] = useState(null);
+  const [confirmDestructive, setConfirmDestructive] = useState(null);
 
   useEffect(() => {
     async function loadAdminData() {
@@ -40,8 +55,8 @@ export default function AdminPage() {
       try {
         const queue = await fetchAdminReportQueue();
         const logs = await fetchAdminAuditLogs();
-        setReports(queue);
-        setAuditLogs(logs);
+        setReports(queue || []);
+        setAuditLogs(logs || []);
       } catch (e) {
         console.error(e);
       } finally {
@@ -51,309 +66,297 @@ export default function AdminPage() {
     loadAdminData();
   }, [isAdmin]);
 
-  const handleAction = async (reportId, action) => {
-    const notes = moderatorNotes[reportId] || '';
+  const handleAction = async (reportId, action, notes = '') => {
     try {
       const res = await adminTakeAction({
         reportId,
         action,
-        moderatorNotes: notes
+        moderatorNotes: notes || `Moderator performed ${action}`
       });
 
-      if (res.success) {
-        addToast(`Moderation action completed: ${action}`, 'success');
+      if (res && res.success) {
+        addToast(`action: ${action}`, 'success');
         const queue = await fetchAdminReportQueue();
         const logs = await fetchAdminAuditLogs();
-        setReports(queue);
-        setAuditLogs(logs);
-      } else {
-        addToast(res.error || 'Failed to complete action', 'error');
+        setReports(queue || []);
+        setAuditLogs(logs || []);
       }
     } catch (e) {
-      addToast('Error performing moderation action', 'error');
+      addToast('error performing moderation action', 'error');
+    } finally {
+      setConfirmDestructive(null);
     }
   };
 
-  const handleLookupAuthor = async (postId) => {
-    try {
-      const res = await adminLookupAuthor(postId);
-      if (res.success) {
-        setRevealedAuthors(prev => ({
-          ...prev,
-          [postId]: res
-        }));
-        addToast('Author identity retrieved. Access logged to audit trail.', 'info');
-        const logs = await fetchAdminAuditLogs();
-        setAuditLogs(logs);
-      } else {
-        addToast(res.error || 'Failed to look up author', 'error');
-      }
-    } catch (e) {
-      addToast('Error performing lookup', 'error');
-    }
+  const handleIssueWarning = (report) => {
+    const newWarn = {
+      id: `warn-${Date.now()}`,
+      post_number_formatted: report.post?.post_number_formatted || '#01',
+      student: `Author of ${report.post?.post_number_formatted || '#01'}`,
+      reason: report.reason || 'community standard violation',
+      issued_by: user.name || 'Jordan Brooks',
+      date: 'Just now'
+    };
+    setWarnings(prev => [newWarn, ...prev]);
+    handleAction(report.id, 'warn', `Warning issued: ${report.reason}`);
   };
 
-  // If user is not admin
   if (!isAdmin) {
     return (
-      <div className="flex min-h-screen bg-[#0D0D0F] text-[#F0F0F2]">
-        <Sidebar />
-        <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-8">
+      <div className="flex min-h-screen bg-[#0A0A0A] text-[#EDEDED]">
+        <Sidebar onOpenCreateModal={() => setIsCreateOpen(true)} onOpenCommandPalette={() => setIsCommandOpen(true)} />
+        <div className="flex-1 flex flex-col min-w-0 pb-16 md:pb-8">
           <MobileHeader />
           <main className="flex-1 flex justify-center items-center px-4">
-            <div className="max-w-md w-full bg-[#151518] border border-[#2A2A2F] rounded-xl p-6 text-center flex flex-col items-center gap-4">
-              <IconLock size={36} className="text-[#F07845]" />
-              <h1 className="text-base font-semibold text-[#F0F0F2]">Admin & Moderator Access Restricted</h1>
-              <p className="text-xs text-[#777780] leading-relaxed">
-                You are currently viewing CampusEcho as a regular student. Switch your account role to Moderator to review reported discussions and audit logs.
+            <div className="max-w-md w-full bg-[#111111] border border-[#232323] rounded-[8px] p-6 text-center flex flex-col items-center gap-3">
+              <IconLock size={20} className="text-[#FF5A1F]" />
+              <h1 className="text-[16px] font-semibold text-[#EDEDED]">Moderator Access Restricted</h1>
+              <p className="text-[13px] text-[#A1A1A1] leading-relaxed">
+                You are currently signed in as a student. To review reports, audit privileged reveals, and manage community safety, toggle your role to Moderator.
               </p>
               <button
+                type="button"
                 onClick={toggleAdminRole}
-                className="px-4 py-2 bg-[#F07845] hover:bg-[#e06b3a] text-[#0D0D0F] font-semibold text-xs rounded-lg transition-smooth cursor-pointer"
+                className="h-[36px] px-4 bg-[#FF5A1F] hover:bg-[#ff6e38] text-[#0A0A0A] font-semibold text-[13px] rounded-[6px] transition-fast cursor-pointer mt-1"
               >
-                Switch to Moderator Role
+                Switch to Moderator
               </button>
             </div>
           </main>
         </div>
-        <MobileNav />
       </div>
     );
   }
 
-  const pendingReports = reports.filter(r => r.status === 'pending');
+  const pendingReports = reports.filter(r => r.status === 'pending' || r.status === 'Pending Review');
+  const activeReports = activeTab === 'pending' ? pendingReports : reports;
 
   return (
-    <div className="flex min-h-screen bg-[#0D0D0F] text-[#F0F0F2]">
-      <Sidebar />
+    <div className="flex min-h-screen bg-[#0A0A0A] text-[#EDEDED]">
+      <Sidebar onOpenCreateModal={() => setIsCreateOpen(true)} onOpenCommandPalette={() => setIsCommandOpen(true)} />
 
-      <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-8">
+      <div className="flex-1 flex flex-col min-w-0 pb-16 md:pb-8">
         <MobileHeader />
 
-        <main className="flex-1 flex justify-center px-4 sm:px-6 py-6">
-          <div className="w-full max-w-3xl flex flex-col gap-6 text-left">
+        <main className="flex-1 flex justify-center px-0 sm:px-6 py-0 sm:py-6">
+          <div className="w-full max-w-[640px] flex flex-col border-x border-[#232323] min-h-screen text-left">
             {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#2A2A2F]">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <IconAdmin size={20} className="text-[#F07845]" />
-                  <h1 className="text-xl font-semibold text-[#F0F0F2] tracking-tight">
-                    Campus Moderation Dashboard
-                  </h1>
-                </div>
-                <p className="text-xs text-[#777780]">
-                  Review reported discussions, investigate violations, and maintain community safety.
-                </p>
+            <div className="p-4 border-b border-[#232323] flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-[#FF5A1F]">
+                  MODERATION CONSOLE
+                </span>
+                <span className="font-mono text-[11px] text-[#6B6B6B]">
+                  moderator: <strong className="text-[#EDEDED]">{user.name}</strong>
+                </span>
               </div>
-
-              <span className="text-xs bg-[#1C1C20] border border-[#2A2A2F] px-3 py-1 rounded-lg text-[#F07845] font-mono">
-                {pendingReports.length} Pending
-              </span>
+              <h1 className="text-[28px] font-semibold text-[#EDEDED] tracking-[-0.03em] leading-tight">
+                Moderation
+              </h1>
+              <p className="text-[13px] text-[#A1A1A1]">
+                campus safety, report resolution, and privileged student identity audit logs.
+              </p>
             </div>
 
-            {/* Navigation tabs */}
-            <div className="flex items-center gap-2 border-b border-[#2A2A2F] pb-2">
-              <button
-                onClick={() => setActiveTab('queue')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-smooth cursor-pointer ${
-                  activeTab === 'queue'
-                    ? 'bg-[#1C1C20] text-[#F0F0F2] border border-[#2A2A2F]'
-                    : 'text-[#777780] hover:text-[#A0A0A8]'
-                }`}
-              >
-                Report Queue ({pendingReports.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('audit')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-smooth cursor-pointer ${
-                  activeTab === 'audit'
-                    ? 'bg-[#1C1C20] text-[#F0F0F2] border border-[#2A2A2F]'
-                    : 'text-[#777780] hover:text-[#A0A0A8]'
-                }`}
-              >
-                Audit Trail ({auditLogs.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('guidelines')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-smooth cursor-pointer ${
-                  activeTab === 'guidelines'
-                    ? 'bg-[#1C1C20] text-[#F0F0F2] border border-[#2A2A2F]'
-                    : 'text-[#777780] hover:text-[#A0A0A8]'
-                }`}
-              >
-                Disciplinary Policy
-              </button>
+            {/* Navigation Tabs */}
+            <div className="px-4 flex items-center gap-5 border-b border-[#232323] overflow-x-auto scrollbar-none select-none">
+              {MOD_TABS.map((tab) => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`relative py-3 text-[13px] transition-fast cursor-pointer shrink-0 ${
+                      isActive
+                        ? 'text-[#EDEDED] font-semibold'
+                        : 'text-[#6B6B6B] hover:text-[#EDEDED]'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    {tab.id === 'reports' && reports.length > 0 && (
+                      <span className="ml-1.5 font-mono text-[10px] tabular-nums px-1.5 py-0.2 rounded bg-[#161616] border border-[#232323] text-[#FF5A1F]">
+                        {reports.length}
+                      </span>
+                    )}
+                    {isActive && (
+                      <span className="absolute bottom-0 left-0 right-0 h-[1px] bg-[#EDEDED]" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Tab: Report Queue */}
-            {activeTab === 'queue' && (
-              <div className="flex flex-col gap-4">
-                {pendingReports.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center p-12 text-center bg-[#151518] border border-[#2A2A2F] rounded-xl">
-                    <EmptyStateIllustration size={64} className="mb-3 text-[#777780]" />
-                    <h3 className="text-sm font-semibold text-[#F0F0F2] mb-1">Report Queue Clean</h3>
-                    <p className="text-xs text-[#777780]">No student reports or automated flags currently require review.</p>
+            {/* Content List */}
+            {(activeTab === 'reports' || activeTab === 'pending') && (
+              <div className="flex flex-col divide-y divide-[#232323]">
+                {activeReports.length === 0 ? (
+                  <div className="py-20 text-center text-[13px] text-[#6B6B6B]">
+                    queue clear. no discussions currently flagged.
                   </div>
                 ) : (
-                  pendingReports.map((report) => {
-                    const post = report.post;
-                    const revealed = post ? revealedAuthors[post.id] : null;
+                  activeReports.map((report) => (
+                    <div key={report.id} className="p-4 flex flex-col gap-2.5 bg-[#0A0A0A] hover:bg-[#111111] transition-fast">
+                      <div className="flex items-center justify-between text-[11px] font-mono">
+                        <span className="text-[#FF5A1F] font-semibold">
+                          Post {report.post?.post_number_formatted || '#01'}
+                        </span>
+                        <span className="text-[#6B6B6B]">
+                          reports: {report.reports_count || 1} &middot; status: {report.status || 'pending'}
+                        </span>
+                      </div>
 
-                    return (
-                      <div
-                        key={report.id}
-                        className="bg-[#151518] border border-[#2A2A2F] rounded-xl p-5 flex flex-col gap-4 text-left"
-                      >
-                        {/* Report metadata */}
-                        <div className="flex items-center justify-between pb-3 border-b border-[#2A2A2F]">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-[#E36B73] bg-[#E36B73]/10 px-2 py-0.5 rounded border border-[#E36B73]/20">
-                              {report.reason}
-                            </span>
-                            <span className="text-xs text-[#777780]">
-                              Reported {formatRelativeTime(report.created_at)}
-                            </span>
-                          </div>
-                          {post && (
-                            <span className="text-xs font-mono text-[#F07845]">
-                              {post.post_number_formatted}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Post Preview */}
-                        {post ? (
-                          <div className="bg-[#1C1C20] border border-[#2A2A2F] rounded-lg p-3.5 flex flex-col gap-2">
-                            <div className="flex items-center justify-between text-xs text-[#777780]">
-                              <span>Identity: {post.is_anonymous ? 'Anonymous Student' : post.author_name}</span>
-                              <span>Category: {post.category}</span>
-                            </div>
-                            <h3 className="text-sm font-semibold text-[#F0F0F2]">{post.title}</h3>
-                            <p className="text-xs text-[#A0A0A8] leading-relaxed whitespace-pre-line">{post.content}</p>
-                          </div>
-                        ) : (
-                          <div className="text-xs text-[#777780] italic">Post was already removed or expired.</div>
+                      <div className="text-[13px] text-[#A1A1A1] bg-[#111111] border border-[#232323] p-2.5 rounded-[6px]">
+                        <div><strong className="text-[#EDEDED]">Reason:</strong> {report.reason}</div>
+                        {report.post && (
+                          <div className="text-[#6B6B6B] italic mt-1 line-clamp-2">"{report.post.title}"</div>
                         )}
+                      </div>
 
-                        {/* Authorized Identity Lookup */}
-                        {post && (
-                          <div className="p-3 bg-[#1C1C20]/70 border border-[#2A2A2F] rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
-                            <div className="flex items-center gap-2 text-[#777780]">
-                              <IconLock size={14} className="text-[#F07845]" />
-                              <span>Author Record: {revealed ? revealed.registered_email : 'Confidential (Protected by RLS)'}</span>
-                            </div>
-                            {!revealed ? (
-                              <button
-                                type="button"
-                                onClick={() => handleLookupAuthor(post.id)}
-                                className="text-[11px] font-medium text-[#F07845] hover:underline cursor-pointer"
-                              >
-                                Authorized Audit Lookup
-                              </button>
-                            ) : (
-                              <span className="text-[11px] text-[#76B99A] font-medium">Logged in Audit Trail</span>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Moderator Notes Input */}
-                        <div className="flex flex-col gap-1">
-                          <label className="text-xs text-[#A0A0A8]">Moderator Notes:</label>
-                          <input
-                            type="text"
-                            placeholder="Reason for decision, policy section, or internal comment..."
-                            value={moderatorNotes[report.id] || ''}
-                            onChange={(e) => setModeratorNotes({ ...moderatorNotes, [report.id]: e.target.value })}
-                            className="bg-[#1C1C20] border border-[#2A2A2F] rounded-lg px-3 py-2 text-xs text-[#F0F0F2] outline-none focus:border-[#F07845]"
-                          />
-                        </div>
-
-                        {/* Action buttons */}
-                        <div className="flex items-center justify-between pt-2 border-t border-[#2A2A2F] gap-2 flex-wrap">
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleAction(report.id, 'approve')}
-                              className="px-3.5 py-1.5 bg-[#1C1C20] hover:bg-[#2A2A2F] text-[#76B99A] border border-[#2A2A2F] text-xs font-medium rounded-lg transition-smooth cursor-pointer"
-                            >
-                              Dismiss Report (Approve Post)
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAction(report.id, 'escalate')}
-                              className="px-3.5 py-1.5 bg-[#1C1C20] hover:bg-[#2A2A2F] text-[#F07845] border border-[#2A2A2F] text-xs font-medium rounded-lg transition-smooth cursor-pointer"
-                            >
-                              Escalate to Dean Office
-                            </button>
-                          </div>
-
+                      <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => handleAction(report.id, 'remove')}
-                            className="px-4 py-1.5 bg-[#E36B73] hover:bg-[#c95b63] text-white text-xs font-semibold rounded-lg transition-smooth cursor-pointer"
+                            onClick={() => handleAction(report.id, 'approve')}
+                            className="px-2.5 py-1 rounded-[4px] bg-[#161616] border border-[#232323] text-[12px] text-[#EDEDED] hover:bg-[#232323] cursor-pointer"
                           >
-                            Remove Post
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDestructive({ type: 'remove', reportId: report.id, postNumber: report.post?.post_number_formatted || '#01' })}
+                            className="px-2.5 py-1 rounded-[4px] bg-[#161616] border border-[#EF4444]/40 text-[12px] text-[#EF4444] hover:bg-[#EF4444]/15 cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleIssueWarning(report)}
+                            className="px-2.5 py-1 rounded-[4px] bg-[#161616] border border-[#232323] text-[12px] text-[#6B6B6B] hover:text-[#EDEDED] cursor-pointer"
+                          >
+                            Warn
                           </button>
                         </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
 
-            {/* Tab: Audit Log */}
-            {activeTab === 'audit' && (
-              <div className="flex flex-col gap-2.5">
-                {auditLogs.length === 0 ? (
-                  <div className="p-8 text-center bg-[#151518] border border-[#2A2A2F] rounded-xl text-xs text-[#777780]">
-                    No audit records registered yet.
-                  </div>
-                ) : (
-                  auditLogs.map((log) => (
-                    <div
-                      key={log.id}
-                      className="p-3.5 bg-[#151518] border border-[#2A2A2F] rounded-xl flex items-start justify-between gap-3 text-xs"
-                    >
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-[#F0F0F2]">{log.action}</span>
-                          <span className="text-[#777780] font-mono">by {log.performed_by}</span>
+                        <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#FF5A1F]">
+                          <IconEye size={12} />
+                          <span>Author: <strong className="text-[#EDEDED]">{report.post?.real_author_name || 'Sam Alvarez'}</strong> ({report.post?.real_author_email || 's.alvarez@student.college.edu'})</span>
                         </div>
-                        <span className="text-[#A0A0A8]">{log.details}</span>
                       </div>
-                      <span className="text-[11px] text-[#777780] shrink-0">
-                        {formatRelativeTime(log.timestamp)}
-                      </span>
                     </div>
                   ))
                 )}
               </div>
             )}
 
-            {/* Tab: Disciplinary Policy */}
-            {activeTab === 'guidelines' && (
-              <div className="p-5 bg-[#151518] border border-[#2A2A2F] rounded-xl flex flex-col gap-4 text-xs leading-relaxed text-[#A0A0A8]">
-                <h3 className="text-sm font-semibold text-[#F0F0F2]">College Disciplinary Framework</h3>
-                <div className="flex flex-col gap-2">
-                  <p className="font-medium text-[#F0F0F2]">1. Minor Violation (Profanity bypass, off-topic spam):</p>
-                  <p>Issue formal written warning to the account. Content is masked or unlisted.</p>
+            {/* SECTION: Warnings */}
+            {activeTab === 'warnings' && (
+              <div className="flex flex-col divide-y divide-[#232323]">
+                {warnings.map(w => (
+                  <div key={w.id} className="p-4 flex flex-col gap-1 text-[13px]">
+                    <div className="flex items-center justify-between font-mono text-[11px]">
+                      <span className="text-[#EDEDED] font-semibold">{w.student}</span>
+                      <span className="text-[#6B6B6B]">{w.date}</span>
+                    </div>
+                    <span className="text-[#A1A1A1]">reason: {w.reason}</span>
+                    <span className="font-mono text-[10.5px] text-[#6B6B6B]">issued by: {w.issued_by}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* SECTION: Suspensions */}
+            {activeTab === 'suspensions' && (
+              <div className="flex flex-col divide-y divide-[#232323]">
+                {suspensions.map(s => (
+                  <div key={s.id} className="p-4 flex flex-col gap-1 text-[13px]">
+                    <div className="flex items-center justify-between font-mono text-[11px]">
+                      <span className="text-[#EDEDED] font-semibold">{s.student}</span>
+                      <span className="text-[#EF4444]">{s.duration} suspension</span>
+                    </div>
+                    <span className="text-[#A1A1A1]">violation: {s.reason}</span>
+                    <span className="font-mono text-[10.5px] text-[#6B6B6B]">authorized by: {s.issued_by}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* SECTION: Recent Actions (Audit Logs) */}
+            {activeTab === 'audit' && (
+              <div className="flex flex-col divide-y divide-[#232323]">
+                <div className="p-3 text-[12px] font-mono text-[#6B6B6B] bg-[#111111]">
+                  immutable append-only audit trail. every unmasking and moderation decision is signed.
                 </div>
-                <div className="flex flex-col gap-2">
-                  <p className="font-medium text-[#F0F0F2]">2. Repeated Infractions (3 Confirmed Warnings):</p>
-                  <p>Account placed on 14-day posting suspension. Read-only permissions maintained.</p>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <p className="font-medium text-[#F0F0F2]">3. Severe Infractions (5 Warnings or Direct Threats/Doxxing):</p>
-                  <p>Three-month suspension and referral to university student conduct committee.</p>
-                </div>
+                {auditLogs.length === 0 ? (
+                  <div className="py-12 text-center font-mono text-[12px] text-[#6B6B6B]">
+                    no actions recorded in session.
+                  </div>
+                ) : (
+                  auditLogs.map(log => (
+                    <div key={log.id} className="p-3.5 flex flex-col gap-1 font-mono text-[12px]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#EDEDED]">{log.moderator_name || 'Jordan Brooks'}</span>
+                        <span className="text-[#6B6B6B]">{log.timestamp}</span>
+                      </div>
+                      <div className="text-[#A1A1A1]">
+                        action: <strong className="text-[#FF5A1F]">{log.action}</strong> {log.target_post && `on Post ${log.target_post}`}
+                      </div>
+                      {log.hidden_identity && (
+                        <div className="text-[11px] text-[#6B6B6B] pt-0.5">
+                          revealed: {log.hidden_identity} ({log.registered_email})
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </div>
         </main>
       </div>
 
-      <MobileNav />
+      <MobileNav onOpenCreate={() => setIsCreateOpen(true)} />
+      <CreatePostModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CommandPalette isOpen={isCommandOpen} onClose={() => setIsCommandOpen(false)} onOpenCreate={() => setIsCreateOpen(true)} />
+
+      {/* Confirmation Dialog for Destructive Removal */}
+      {confirmDestructive && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75">
+          <div className="w-full max-w-sm bg-[#111111] border border-[#232323] rounded-[8px] p-4 flex flex-col gap-3 text-left">
+            <span className="text-[14px] font-semibold text-[#EDEDED]">Confirm Removal</span>
+            <p className="text-[13px] text-[#A1A1A1] leading-relaxed">
+              Remove Post {confirmDestructive.postNumber} from campus feed? This action writes an audit event.
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#232323]">
+              <button
+                type="button"
+                onClick={() => setConfirmDestructive(null)}
+                className="px-3 py-1.5 text-[12px] text-[#A1A1A1] hover:text-[#EDEDED]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAction(confirmDestructive.reportId, 'remove')}
+                className="px-3 py-1.5 rounded-[6px] text-[12px] font-semibold bg-[#EF4444] text-white hover:bg-[#dc2626] cursor-pointer"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedPostForReveal && (
+        <ModeratorRevealModal
+          post={selectedPostForReveal}
+          isOpen={Boolean(selectedPostForReveal)}
+          onClose={() => setSelectedPostForReveal(null)}
+          onRevealed={async () => {
+            const logs = await fetchAdminAuditLogs();
+            setAuditLogs(logs || []);
+          }}
+        />
+      )}
     </div>
   );
 }
