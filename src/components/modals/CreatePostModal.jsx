@@ -199,77 +199,96 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                     <span>{isAnonymous ? 'Anonymous' : user.name}</span>
                   </button>
 
-                  {/* Custom Category Dropdown: Light orange border, blue active/hover item */}
-                  <div className="relative" ref={categoryRef}>
-                    <button
-                      type="button"
-                      onClick={() => setIsCategoryOpen(!isCategoryOpen)}
-                      className="flex items-center gap-2.5 px-3 py-1.5 rounded-[6px] text-[13px] font-mono transition-all cursor-pointer select-none"
-                      style={{
-                        backgroundColor: 'var(--surface-sunken)',
-                        border: '1.5px solid #FF5A1F',
-                        color: 'var(--text-primary)',
-                        boxShadow: isCategoryOpen ? '0 0 10px rgba(255, 90, 31, 0.4)' : 'none'
-                      }}
-                      title="Select category"
-                    >
-                      <span>{category}</span>
-                      <svg 
-                        className={`w-3.5 h-3.5 transition-transform duration-150 ${isCategoryOpen ? 'rotate-180' : ''}`}
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
-                        style={{ color: 'var(--text-primary)' }}
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-
-                    {/* Dropdown Options Popup */}
-                    {isCategoryOpen && (
-                      <div 
-                        className="absolute right-0 top-full mt-1.5 w-[165px] rounded-[6px] border py-1 z-30 shadow-2xl animate-fadeIn"
+                    {/* Custom Category Dropdown: Pops rightwards on desktop, downward on phone */}
+                    <div className="relative" ref={categoryRef}>
+                      <button
+                        type="button"
+                        onClick={() => setIsCategoryOpen(!isCategoryOpen)}
+                        className="flex items-center gap-2.5 px-3 py-1.5 rounded-[6px] text-[13px] font-mono transition-all cursor-pointer select-none"
                         style={{
-                          backgroundColor: '#111114',
-                          borderColor: 'rgba(255, 255, 255, 0.15)'
+                          backgroundColor: 'var(--surface-sunken)',
+                          border: '1.5px solid #FF5A1F',
+                          color: 'var(--text-primary)',
+                          boxShadow: isCategoryOpen ? '0 0 10px rgba(255, 90, 31, 0.4)' : 'none'
                         }}
+                        title="Select category"
                       >
-                        {CATEGORIES.map((cat) => {
-                          const isSelected = cat === category;
-                          return (
-                            <button
-                              key={cat}
-                              type="button"
-                              onClick={() => {
-                                setCategory(cat);
-                                setIsCategoryOpen(false);
-                              }}
-                              className="w-full text-left px-3.5 py-1.5 text-[13px] font-mono cursor-pointer transition-colors block select-none"
-                              style={{
-                                backgroundColor: isSelected ? '#FF5A1F' : 'transparent',
-                                color: isSelected ? '#0A0A0A' : '#EDEDED',
-                                fontWeight: isSelected ? 600 : 400
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!isSelected) {
-                                  e.currentTarget.style.backgroundColor = '#FF5A1F';
-                                  e.currentTarget.style.color = '#0A0A0A';
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!isSelected) {
-                                  e.currentTarget.style.backgroundColor = 'transparent';
-                                  e.currentTarget.style.color = '#EDEDED';
-                                }
-                              }}
-                            >
-                              {cat}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                        <span>{category}</span>
+                        <svg 
+                          className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                            isCategoryOpen 
+                              ? 'rotate-180 sm:rotate-90' 
+                              : 'sm:-rotate-90'
+                          }`}
+                          fill="none" 
+                          stroke="currentColor" 
+                          viewBox="0 0 24 24"
+                          style={{ color: 'var(--text-primary)' }}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+
+                      {/* Dropdown Options Popup: Rightwards on desktop (sm+), Downward on phone (<sm) */}
+                      {isCategoryOpen && (
+                        <div 
+                          className="absolute right-0 top-full mt-1.5 sm:top-auto sm:right-auto sm:left-[calc(100%+10px)] sm:bottom-0 w-[170px] rounded-[8px] border py-1.5 z-40 shadow-2xl animate-fadeIn"
+                          style={{
+                            backgroundColor: '#111114',
+                            borderColor: 'rgba(255, 255, 255, 0.15)',
+                            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.8), 0 0 16px rgba(255, 90, 31, 0.15)'
+                          }}
+                        >
+                          {/* Desktop pointer notch */}
+                          <div 
+                            className="hidden sm:block absolute -left-[5px] bottom-3 w-2.5 h-2.5 rotate-45 border-l border-b"
+                            style={{
+                              backgroundColor: '#111114',
+                              borderColor: 'rgba(255, 255, 255, 0.15)'
+                            }}
+                          />
+
+                          <div className="px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-[#6B6B6B] border-b border-white/5 mb-1 flex items-center gap-1.5 select-none">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A1F]" />
+                            <span>Category</span>
+                          </div>
+
+                          {CATEGORIES.map((cat) => {
+                            const isSelected = cat === category;
+                            return (
+                              <button
+                                key={cat}
+                                type="button"
+                                onClick={() => {
+                                  setCategory(cat);
+                                  setIsCategoryOpen(false);
+                                }}
+                                className="w-full text-left px-3.5 py-1.5 text-[13px] font-mono cursor-pointer transition-colors block select-none"
+                                style={{
+                                  backgroundColor: isSelected ? '#FF5A1F' : 'transparent',
+                                  color: isSelected ? '#0A0A0A' : '#EDEDED',
+                                  fontWeight: isSelected ? 600 : 400
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!isSelected) {
+                                    e.currentTarget.style.backgroundColor = '#FF5A1F';
+                                    e.currentTarget.style.color = '#0A0A0A';
+                                  }
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!isSelected) {
+                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                    e.currentTarget.style.color = '#EDEDED';
+                                  }
+                                }}
+                              >
+                                {cat}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                 </div>
 
                 {/* Submit Action: Spill Confession button */}
