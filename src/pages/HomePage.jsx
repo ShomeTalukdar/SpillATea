@@ -92,8 +92,6 @@ export default function HomePage() {
     loadWeek();
   }, [selectedDayTab]);
 
-
-
   // Intersection observer to mark confessions as read as user scrolls
   useEffect(() => {
     if (todayConfessions.length === 0) return;
@@ -151,7 +149,10 @@ export default function HomePage() {
   }, [navigate]);
 
   const handleConfessionCreated = (newConfession) => {
-    setTodayConfessions((prev) => [newConfession, ...prev]);
+    if (!newConfession) return;
+    setSelectedDayTab('today');
+    setTodayConfessions((prev) => [newConfession, ...prev.filter(c => c.id !== newConfession.id)]);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Calculate read progress percentage

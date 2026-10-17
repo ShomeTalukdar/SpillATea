@@ -234,7 +234,7 @@ export default function TrendingSidebar({ onSelectConfession = null }) {
             <span style={{ color: 'var(--text-secondary)' }}>ENGINE</span>
           </div>
           <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
-            {dbStatus.isDbConnected ? 'MongoDB Atlas' : dbStatus.isAvailable ? 'Express (Connecting)' : 'MongoDB Ready'}
+            {dbStatus.databaseName || (dbStatus.isDbConnected ? 'Connected' : dbStatus.isAvailable ? 'Connecting...' : 'Ready')}
           </span>
         </div>
       </div>

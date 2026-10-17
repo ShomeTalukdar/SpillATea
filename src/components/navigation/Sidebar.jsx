@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
 import { 
   BrandWordmark, 
@@ -22,7 +22,7 @@ import { useAuth } from '../../context/AuthContext';
  * - Quiet user info & role toggle
  */
 export default function Sidebar({ onOpenCreateModal, onOpenCommandPalette }) {
-  const { user, isAdmin, toggleAdminRole } = useAuth();
+  const { user, isAdmin, toggleAdminRole, logout, openAuthModal } = useAuth();
   const navigate = useNavigate();
 
   const primaryNav = [
@@ -53,7 +53,14 @@ export default function Sidebar({ onOpenCreateModal, onOpenCommandPalette }) {
         {/* Primary Action Button: Filled orange capsule button */}
         <button
           type="button"
-          onClick={() => onOpenCreateModal ? onOpenCreateModal() : navigate('/create')}
+          onClick={() => {
+            if (!user) {
+              openAuthModal('Please sign in with your college email to spill a confession.');
+              return;
+            }
+            if (onOpenCreateModal) onOpenCreateModal();
+            else navigate('/create');
+          }}
           className="btn-spill-tea w-full h-[42px] text-[14px]"
         >
           <span>Spill Something</span>
@@ -76,6 +83,18 @@ export default function Sidebar({ onOpenCreateModal, onOpenCommandPalette }) {
                   key={item.to}
                   to={item.to}
                   end={item.to === '/'}
+                  onClick={(e) => {
+                    if (item.to === '/settings' && !user) {
+                      e.preventDefault();
+                      openAuthModal('Please sign in with your college email to access account settings.');
+                      return;
+                    }
+                    if ((item.to === '/saved' || item.to === '/activity') && !user) {
+                      e.preventDefault();
+                      openAuthModal(`Please sign in with your college email to view your ${item.label.toLowerCase()}.`);
+                      return;
+                    }
+                  }}
                   className={({ isActive }) =>
                     `relative flex items-center justify-between h-[40px] px-3 rounded-[6px] text-[14px] font-sans transition-colors cursor-pointer ${
                       isActive ? 'font-medium' : 'font-normal'
@@ -144,34 +163,62 @@ export default function Sidebar({ onOpenCreateModal, onOpenCommandPalette }) {
         className="pt-3 border-t flex items-center justify-between text-left"
         style={{ borderColor: 'var(--border)' }}
       >
-        <div className="flex flex-col min-w-0 leading-tight">
-          <span 
-            className="text-[14px] font-medium font-sans truncate"
-            style={{ color: 'var(--text-primary)' }}
-          >
-            {user.name}
-          </span>
-          <span 
-            className="text-[12px] font-sans truncate mt-0.5"
-            style={{ color: 'var(--text-tertiary)' }}
-          >
-            {isAdmin ? 'Campus Moderator' : 'Verified Student'}
-          </span>
-        </div>
+        {user ? (
+          <div className="flex items-center justify-between w-full">
+            <div className="flex flex-col min-w-0 leading-tight">
+              <span 
+                className="text-[13px] font-medium font-sans truncate"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                {user.displayName || user.name || 'Anonymous Student'}
+              </span>
+              <span 
+                className="text-[11px] font-sans truncate mt-0.5"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                {isAdmin ? 'Campus Moderator' : 'Verified Student'}
+              </span>
+            </div>
 
-        <button
-          type="button"
-          onClick={toggleAdminRole}
-          className="px-2 py-0.5 rounded-[4px] border font-mono text-[11px] transition-colors cursor-pointer"
-          style={{ 
-            borderColor: 'var(--border)', 
-            color: 'var(--text-secondary)',
-            backgroundColor: 'var(--surface-sunken)'
-          }}
-          title="Toggle Student / Moderator role"
-        >
-          {isAdmin ? 'MOD' : 'STU'}
-        </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={toggleAdminRole}
+                className="px-1.5 py-0.5 rounded-[4px] border font-mono text-[10px] transition-colors cursor-pointer"
+                style={{ 
+                  borderColor: 'var(--border)', 
+                  color: 'var(--text-secondary)',
+                  backgroundColor: 'var(--surface-sunken)'
+                }}
+                title="Toggle Student / Moderator role"
+              >
+                {isAdmin ? 'MOD' : 'STU'}
+              </button>
+
+              <button
+                type="button"
+                onClick={logout}
+                className="px-1.5 py-0.5 rounded-[4px] border font-mono text-[10px] transition-colors cursor-pointer hover:text-red-400"
+                style={{ 
+                  borderColor: 'var(--border)', 
+                  color: 'var(--text-secondary)',
+                  backgroundColor: 'var(--surface-sunken)'
+                }}
+                title="Sign out of account"
+              >
+                Exit
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => openAuthModal()}
+            className="w-full py-2 px-3 rounded-lg border border-[#F06A3A]/40 bg-[#F06A3A]/10 text-[#F06A3A] hover:bg-[#F06A3A]/20 font-medium text-[13px] transition-colors flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <span>Sign In to Spill</span>
+          </button>
+        )}
       </div>
     </aside>
   );

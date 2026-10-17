@@ -4,8 +4,19 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { validateAndModeratePost, moderateText } from './moderation';
 import { api } from './api';
+import { firestoreService } from './firestore';
+import { isFirebaseConfigured } from '../lib/firebase';
 
 export async function checkBackendStatus() {
+  if (isFirebaseConfigured) {
+    return {
+      isAvailable: true,
+      service: 'Firebase Cloud Firestore',
+      database: 'connected',
+      databaseName: 'spillatea (Firestore)',
+      isDbConnected: true
+    };
+  }
   return api.checkHealth();
 }
 
@@ -722,7 +733,30 @@ export async function fetchConfessions({ day = 'today', date = null, category = 
   const isModerator = currentUser && currentUser.role === 'admin';
   const myPostIds = getMyCreatedPostIds();
 
-  // 1. Try Express & MongoDB API
+  // 1. Try Firebase Firestore if configured
+  if (isFirebaseConfigured) {
+    try {
+      const fsConfessions = await firestoreService.getConfessions({ day, category, search: searchQuery });
+      if (fsConfessions && fsConfessions.length > 0) {
+        return fsConfessions.map(c => {
+          const isAuthor = myPostIds.includes(c.id) || (currentUser && c.author_id === currentUser.id);
+          return {
+            ...c,
+            is_liked: Boolean(likesMap[c.id]),
+            is_saved: Boolean(savedMap[c.id]),
+            is_own: isAuthor,
+            can_delete: Boolean(isModerator || isAuthor),
+            content: c.body,
+            title: c.to_target || (c.body ? c.body.substring(0, 40) + '...' : 'Confession'),
+            post_number_formatted: c.confession_number,
+            post_number: parseInt(c.confession_number?.replace(/\D/g, '') || '0', 10)
+          };
+        });
+      }
+    } catch (e) {}
+  }
+
+  // 2. Try Express & MongoDB API
   try {
     const apiRes = await api.getConfessions({
       day: date || (day === 'this_week' ? 'all' : day),
@@ -989,53 +1023,123 @@ export async function createConfession({ body, to_target, category = 'Confession
     return { success: false, error: modResult.errors.join(' ') };
   }
 
-  // 1. Try Express & MongoDB API
-  try {
-    const apiRes = await api.createConfession({
-      body: cleanBody,
-      to_target: (to_target || '').trim() || null,
-      category,
-      is_anonymous: Boolean(is_anonymous),
-      author_name: is_anonymous ? 'Anonymous Student' : currentUser.name,
-      real_author_name: currentUser.name,
-      real_author_email: currentUser.email
-    });
+  const isLocalhost = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '0.0.0.0' ||
+    window.location.hostname.endsWith('.local')
+  );
 
-    if (apiRes && apiRes.success && apiRes.data) {
-      const created = apiRes.data;
+  // Helper to persist to local cache for instant UI availability
+  const persistLocally = (item) => {
+    try {
+      const all = getStoredConfessions();
+      const existingIdx = all.findIndex(c => c.id === item.id);
+      if (existingIdx >= 0) {
+        all[existingIdx] = { ...all[existingIdx], ...item };
+      } else {
+        all.unshift(item);
+      }
+      saveStoredConfessions(all);
+
       const myPosts = getMyCreatedPostIds();
-      if (!myPosts.includes(created.id)) {
-        myPosts.unshift(created.id);
+      if (!myPosts.includes(item.id)) {
+        myPosts.unshift(item.id);
         saveMyCreatedPostIds(myPosts);
       }
+
       const likesMap = getStoredLikes();
-      likesMap[created.id] = true;
+      likesMap[item.id] = true;
       saveStoredLikes(likesMap);
+    } catch (e) {}
+  };
 
-      const confessionPayload = {
-        ...created,
-        is_liked: true,
-        is_saved: false,
-        is_maybe_me: false,
-        is_own: true,
-        can_delete: true,
-        content: created.body,
-        title: created.to_target || created.body.substring(0, 40) + '...',
-        post_number_formatted: created.confession_number,
-        post_number: parseInt(created.confession_number?.replace(/\D/g, '') || '0', 10)
-      };
+  const rawUser = getCurrentUser() || {};
+  const authorName = is_anonymous ? 'Anonymous Student' : (rawUser.displayName || rawUser.name || 'Student');
+  const realAuthorName = rawUser.displayName || rawUser.name || 'Student';
+  const realAuthorEmail = rawUser.email || 'student@college.edu';
+  const authorId = rawUser.uid || rawUser.id || 'user-current-session';
 
-      return {
-        success: true,
-        confession: confessionPayload,
-        post: confessionPayload
-      };
+  // 1. On Localhost, prioritize local Express & MongoDB API (runs in ~30ms)
+  if (isLocalhost) {
+    try {
+      const apiRes = await api.createConfession({
+        body: cleanBody,
+        to_target: (to_target || '').trim() || null,
+        category,
+        is_anonymous: Boolean(is_anonymous),
+        author_name: authorName,
+        real_author_name: realAuthorName,
+        real_author_email: realAuthorEmail
+      });
+
+      if (apiRes && apiRes.success && apiRes.data) {
+        const created = apiRes.data;
+        const confessionPayload = {
+          ...created,
+          is_liked: true,
+          is_saved: false,
+          is_maybe_me: false,
+          is_own: true,
+          can_delete: true,
+          content: created.body,
+          title: created.to_target || created.body.substring(0, 40) + '...',
+          post_number_formatted: created.confession_number,
+          post_number: parseInt(created.confession_number?.replace(/\D/g, '') || '0', 10)
+        };
+
+        persistLocally(confessionPayload);
+
+        return {
+          success: true,
+          confession: confessionPayload,
+          post: confessionPayload
+        };
+      }
+    } catch (err) {
+      console.warn('[SpillATea] Local API failed, trying fallback:', err.message);
     }
-  } catch (err) {
-    console.warn('[SpillATea] API unavailable, saving confession locally:', err.message);
   }
 
-  // 2. Local Fallback
+  // 2. In Production (or Localhost fallback), try Firebase Firestore
+  if (isFirebaseConfigured && !isLocalhost) {
+    try {
+      const created = await firestoreService.createConfession({
+        body: cleanBody,
+        to_target: (to_target || '').trim() || null,
+        category,
+        is_anonymous: Boolean(is_anonymous),
+        author_name: authorName,
+        author_id: authorId,
+        real_author_name: realAuthorName,
+        real_author_email: realAuthorEmail
+      });
+
+      if (created) {
+        const confessionPayload = {
+          ...created,
+          is_liked: true,
+          is_saved: false,
+          is_own: true,
+          can_delete: true,
+          content: created.body,
+          title: created.to_target || created.body.substring(0, 40) + '...',
+          post_number_formatted: created.confession_number,
+          post_number: parseInt(created.confession_number?.replace(/\D/g, '') || '0', 10)
+        };
+
+        persistLocally(confessionPayload);
+
+        return {
+          success: true,
+          confession: confessionPayload,
+          post: confessionPayload
+        };
+      }
+    } catch (e) {}
+  }
+
+  // 3. Local Fallback
   const all = getStoredConfessions();
   const todayItems = all.filter(c => c.day_key === 'today');
   const nextNum = todayItems.length + 1;
@@ -1061,10 +1165,10 @@ export async function createConfession({ body, to_target, category = 'Confession
     maybe_me_count: 0,
     comment_count: 0,
     is_anonymous: Boolean(is_anonymous),
-    author_name: is_anonymous ? 'Anonymous Student' : currentUser.name,
-    author_id: currentUser.id,
-    real_author_name: currentUser.name,
-    real_author_email: currentUser.email,
+    author_name: authorName,
+    author_id: authorId,
+    real_author_name: realAuthorName,
+    real_author_email: realAuthorEmail,
     status: 'published',
     created_at: now.toISOString()
   };

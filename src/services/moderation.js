@@ -85,31 +85,32 @@ export function validateAndModeratePost({ title, content, category }) {
   const trimmedTitle = (title || '').trim();
   const trimmedContent = (content || '').trim();
 
-  if (!trimmedTitle || trimmedTitle.length < 3) {
-    errors.push('Post title must be at least 3 characters.');
-  }
-  if (trimmedTitle.length > 120) {
-    errors.push('Post title cannot exceed 120 characters.');
+  if (trimmedTitle && trimmedTitle.length > 120) {
+    errors.push('Post title or recipient cannot exceed 120 characters.');
   }
 
   if (!trimmedContent) {
-    errors.push('Post content is required.');
+    errors.push('Confession content is required.');
   }
   if (trimmedContent.length > 5000) {
-    errors.push('Post content cannot exceed 5,000 characters.');
+    errors.push('Confession content cannot exceed 5,000 characters.');
   }
 
   const validCategories = [
     'Confessions',
-    'College Life',
+    'Crushes',
+    'Lost & Found',
+    'Late Night',
     'Academics',
+    'College Life',
     'Relationships',
     'Rants',
     'Memes and Fun',
-    'Advice'
+    'Advice',
+    'General'
   ];
 
-  if (!validCategories.includes(category)) {
+  if (category && !validCategories.some(c => c.toLowerCase() === category.toLowerCase())) {
     errors.push('Please select a valid community category.');
   }
 

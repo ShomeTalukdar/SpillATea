@@ -10,7 +10,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 
 export default function MobileNav({ onOpenCreate }) {
-  const { isAdmin } = useAuth();
+  const { user, isAdmin, openAuthModal } = useAuth();
 
   return (
     <nav 
@@ -42,7 +42,13 @@ export default function MobileNav({ onOpenCreate }) {
       {/* Center "Spill" action in minimalist black glass capsule with orange glow */}
       <button
         type="button"
-        onClick={onOpenCreate}
+        onClick={() => {
+          if (!user) {
+            openAuthModal('Please sign in with your college email to spill a confession.');
+            return;
+          }
+          if (onOpenCreate) onOpenCreate();
+        }}
         className="btn-spill-tea flex items-center justify-center min-w-[42px] min-h-[42px] w-[42px] h-[42px] p-0"
         aria-label="Spill Something"
       >
@@ -63,6 +69,12 @@ export default function MobileNav({ onOpenCreate }) {
 
       <NavLink
         to="/saved"
+        onClick={(e) => {
+          if (!user) {
+            e.preventDefault();
+            openAuthModal('Please sign in with your college email to view saved confessions.');
+          }
+        }}
         className="flex items-center justify-center min-w-[44px] min-h-[44px] rounded-[6px] transition-fast relative"
         style={({ isActive }) => ({
           color: isActive ? 'var(--text-primary)' : 'var(--text-tertiary)'
@@ -74,6 +86,12 @@ export default function MobileNav({ onOpenCreate }) {
 
       <NavLink
         to={isAdmin ? "/admin" : "/activity"}
+        onClick={(e) => {
+          if (!user) {
+            e.preventDefault();
+            openAuthModal('Please sign in with your college email to view your activity.');
+          }
+        }}
         className="flex items-center justify-center min-w-[44px] min-h-[44px] rounded-[6px] transition-fast"
         style={({ isActive }) => ({
           color: isActive ? 'var(--text-primary)' : 'var(--text-tertiary)'

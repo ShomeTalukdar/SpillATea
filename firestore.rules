@@ -1,0 +1,78 @@
+rules_version = '2';
+
+// ===============================================================
+// SpillATea Firestore Security Rules
+// ===============================================================
+// Assumed Collections:
+// - users: { uid, email, displayName, role, college_verified, createdAt }
+// - confessions: { confession_number, body, category, is_anonymous, author_id, status, created_at, likes, comment_count }
+// - comments: { post_id, body, author_name, created_at, likes }
+// - reports: { post_id, reason, notes, status, created_at }
+// - audit_logs: { moderator_name, action, target_post_id, timestamp }
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.role == 'admin' || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(userId);
+      allow delete: if isAdmin();
+    }
+
+    // Confessions collection
+    match /confessions/{confessionId} {
+      // Anyone can read published confessions
+      allow read: if resource.data.status == 'published' || isAdmin();
+      
+      // Authenticated users can create confessions
+      allow create: if isAuthenticated() &&
+        request.resource.data.body is string &&
+        request.resource.data.body.size() > 0 &&
+        request.resource.data.body.size() <= 2000;
+
+      // Reactions / likes can be incremented
+      allow update: if isAuthenticated();
+
+      // Only the author or a campus moderator can delete
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.author_id == request.auth.uid);
+    }
+
+    // Comments collection
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if isAuthenticated() &&
+        request.resource.data.body is string &&
+        request.resource.data.body.size() > 0 &&
+        request.resource.data.body.size() <= 1000;
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // Reports collection
+    match /reports/{reportId} {
+      allow create: if isAuthenticated();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Audit logs collection (strictly admin only)
+    match /audit_logs/{logId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

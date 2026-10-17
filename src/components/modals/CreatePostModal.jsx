@@ -64,17 +64,24 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
       });
 
       if (res && res.success) {
-        if (onPostCreated) onPostCreated(res.confession);
+        if (onPostCreated) {
+          try {
+            onPostCreated(res.confession || res.post);
+          } catch (callbackErr) {
+            console.warn('onPostCreated callback error:', callbackErr);
+          }
+        }
         addToast('Confession posted live', 'success');
         onClose();
         setToTarget('');
         setBody('');
         setPreviewMode(false);
       } else {
-        addToast(res?.error || 'failed to publish', 'error');
+        addToast(res?.error || 'Failed to publish confession.', 'error');
       }
-    } catch (_err) {
-      addToast('error submitting confession', 'error');
+    } catch (err) {
+      console.error('Error submitting confession:', err);
+      addToast(err?.message || 'Error submitting confession', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -87,7 +94,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
     >
       <div 
         onClick={(e) => e.stopPropagation()} 
-        className="w-full max-w-[560px] bg-[#111111] border border-[#262626] rounded-[12px] p-6 flex flex-col gap-4 text-left shadow-2xl relative"
+        className="w-full max-w-[560px] max-h-[90vh] overflow-y-auto bg-[#111111] border border-[#262626] rounded-[12px] p-6 flex flex-col gap-4 text-left shadow-2xl relative"
       >
         {/* Header line with Write / Preview toggle */}
         <div className="flex items-center justify-between pb-3 border-b border-[#262626]">

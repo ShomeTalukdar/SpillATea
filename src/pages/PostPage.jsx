@@ -26,7 +26,7 @@ export default function PostPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const location = useLocation();
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, openAuthModal } = useAuth();
   const { addToast } = useToast();
 
   const commentInputRef = useRef(null);
@@ -89,6 +89,10 @@ export default function PostPage() {
 
   const handleSave = async () => {
     if (!post) return;
+    if (!user) {
+      openAuthModal('Please sign in with your college email to bookmark confessions.');
+      return;
+    }
     const nextSaved = !isSaved;
     setIsSaved(nextSaved);
     const res = await toggleSaveConfession(post.id);
@@ -101,6 +105,10 @@ export default function PostPage() {
 
   const handleLike = async () => {
     if (!post) return;
+    if (!user) {
+      openAuthModal('Please sign in with your college email to like confessions.');
+      return;
+    }
     setLikeScale(true);
     setTimeout(() => setLikeScale(false), 200);
 
@@ -291,7 +299,7 @@ export default function PostPage() {
                 </div>
               )}
 
-              {/* Target Line */}
+              {/* Target Line / Title */}
               {post.to_target && (
                 <div className="mb-4">
                   <span 
@@ -303,15 +311,49 @@ export default function PostPage() {
                 </div>
               )}
 
-              {/* Confession Body */}
-              <div className="mb-6">
-                <p 
-                  className="font-confession text-[20px] sm:text-[21px] leading-[1.6] font-normal whitespace-pre-line tracking-[-0.01em]"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  {post.body || post.content}
-                </p>
-              </div>
+              {!user ? (
+                /* Unauthenticated View */
+                <div>
+                  <h1 className="text-[20px] sm:text-[22px] font-semibold text-[var(--text-primary)] font-sans leading-snug mb-4">
+                    {post.title || post.to_target || (post.body ? post.body.split('\n')[0].slice(0, 85) + '...' : 'Campus Confession')}
+                  </h1>
+
+                  <div className="relative overflow-hidden rounded-[12px] p-8 text-center border border-white/[0.08] bg-[#0E0E12] my-4">
+                    <div className="select-none pointer-events-none filter blur-[6px] opacity-15 text-left font-confession text-[18px] leading-[1.6]">
+                      {post.body ? post.body.slice(0, 220) : 'Confession body locked for verified college students.'}
+                    </div>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-gradient-to-t from-[#0D0D10]/95 via-[#0D0D10]/85 to-transparent">
+                      <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#F06A3A]/15 border border-[#F06A3A]/30 text-[#F06A3A] font-mono text-[11px] font-semibold mb-2">
+                        <span>🔒</span>
+                        <span>CAMPUS VERIFIED ONLY</span>
+                      </div>
+                      <h3 className="text-[17px] font-bold text-white mb-1">
+                        Student Login Required
+                      </h3>
+                      <p className="text-[12.5px] text-[var(--text-secondary)] max-w-sm mb-4 leading-relaxed">
+                        Full confession text, verified reactions, and anonymous student comments are exclusive to students with institutional emails (<span className="text-white font-mono">@kiit.ac.in, .ac.in, .edu</span>).
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => openAuthModal('Sign in with your student email to read full confessions and join discussions.')}
+                        className="px-5 py-2.5 rounded-xl bg-[#F06A3A] hover:bg-[#F06A3A]/90 text-white font-medium text-[13px] shadow-lg shadow-[#F06A3A]/20 transition-all cursor-pointer"
+                      >
+                        Sign In with College Email
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Authenticated Confession Body */
+                <div className="mb-6">
+                  <p 
+                    className="font-confession text-[20px] sm:text-[21px] leading-[1.6] font-normal whitespace-pre-line tracking-[-0.01em]"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    {post.body || post.content}
+                  </p>
+                </div>
+              )}
 
               {/* Hairline Separator */}
               <div className="h-[1px] w-full mb-4" style={{ backgroundColor: 'var(--border)' }} />
@@ -446,94 +488,111 @@ export default function PostPage() {
                 </div>
               </div>
 
-              {/* Add Reply Form */}
-              <form 
-                onSubmit={handleAddReply} 
-                className="flex flex-col gap-2 p-4 rounded-[8px] border"
-                style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
-              >
-                <textarea
-                  ref={commentInputRef}
-                  rows={3}
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  placeholder="Leave an anonymous reply..."
-                  className="w-full rounded-[6px] p-3 text-[13px] border focus:outline-none resize-none transition-colors"
-                  style={{ 
-                    backgroundColor: 'var(--surface-sunken)', 
-                    borderColor: 'var(--border)', 
-                    color: 'var(--text-primary)' 
-                  }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
-                />
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-[10px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
-                    Replies are completely anonymous
-                  </span>
+              {!user ? (
+                <div className="p-6 rounded-[8px] border border-white/[0.06] bg-[#0E0E12] text-center flex flex-col items-center gap-2">
+                  <span className="text-xl">🔒</span>
+                  <p className="text-[13px] text-white font-medium">Comments Locked</p>
+                  <p className="text-[12px] text-[var(--text-secondary)]">Sign in with your student email to view {comments.length} replies and join the conversation.</p>
                   <button
-                    type="submit"
-                    disabled={!replyText.trim() || isSubmitting}
-                    className="px-4 py-1.5 font-medium text-[12px] rounded-[6px] disabled:opacity-40 transition-opacity cursor-pointer"
-                    style={{ backgroundColor: 'var(--accent)', color: '#141414' }}
+                    type="button"
+                    onClick={() => openAuthModal('Sign in with your student email to read and post comments.')}
+                    className="mt-1 px-4 py-2 rounded-lg bg-[#F06A3A] text-white font-medium text-[12px] hover:bg-[#F06A3A]/90 transition-colors cursor-pointer"
                   >
-                    {isSubmitting ? 'Posting...' : 'Reply'}
+                    Sign In to View Discussion
                   </button>
                 </div>
-              </form>
-
-              {/* Comments List */}
-              <div className="flex flex-col divide-y mt-2" style={{ borderColor: 'var(--border)' }}>
-                {comments.length === 0 ? (
-                  <div className="py-12 text-center text-[13px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
-                    No responses yet. Be the first to reply.
-                  </div>
-                ) : (
-                  comments.map((comment) => (
-                    <div 
-                      key={comment.id} 
-                      className="py-4 flex flex-col gap-2 text-left border-b last:border-b-0"
-                      style={{ borderColor: 'var(--border)' }}
-                    >
-                      {/* Comment Meta Row */}
-                      <div className="flex items-center justify-between text-[11px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
-                        <span className="font-medium" style={{ color: 'var(--text-secondary)' }}>{comment.author_name}</span>
-                        <span className="whitespace-nowrap shrink-0">{comment.created_at}</span>
-                      </div>
-
-                      {/* Moderator Reveal: Always below Anonymous Student */}
-                      {isAdmin && (comment.real_author_name || comment.real_author_email) && (
-                        <div className="flex items-center">
-                          <span 
-                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border"
-                            style={{ 
-                              backgroundColor: 'rgba(255, 90, 31, 0.08)', 
-                              borderColor: 'rgba(255, 90, 31, 0.25)',
-                              color: 'var(--accent)'
-                            }}
-                            title="Campus Moderator confidential identity reveal"
-                          >
-                            <IconLock size={10} />
-                            <span>mod reveal:</span>
-                            <strong className="text-[11.5px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-                              {comment.real_author_name}
-                            </strong>
-                            {comment.real_author_email && (
-                              <span style={{ color: 'var(--text-secondary)' }}>
-                                ({comment.real_author_email})
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                      )}
-
-                      <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-                        {comment.content}
-                      </p>
+              ) : (
+                <>
+                  {/* Add Reply Form */}
+                  <form 
+                    onSubmit={handleAddReply} 
+                    className="flex flex-col gap-2 p-4 rounded-[8px] border"
+                    style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+                  >
+                    <textarea
+                      ref={commentInputRef}
+                      rows={3}
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      placeholder="Leave an anonymous reply..."
+                      className="w-full rounded-[6px] p-3 text-[13px] border focus:outline-none resize-none transition-colors"
+                      style={{ 
+                        backgroundColor: 'var(--surface-sunken)', 
+                        borderColor: 'var(--border)', 
+                        color: 'var(--text-primary)' 
+                      }}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+                    />
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[10px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
+                        Replies are completely anonymous
+                      </span>
+                      <button
+                        type="submit"
+                        disabled={!replyText.trim() || isSubmitting}
+                        className="px-4 py-1.5 font-medium text-[12px] rounded-[6px] disabled:opacity-40 transition-opacity cursor-pointer"
+                        style={{ backgroundColor: 'var(--accent)', color: '#141414' }}
+                      >
+                        {isSubmitting ? 'Posting...' : 'Reply'}
+                      </button>
                     </div>
-                  ))
-                )}
-              </div>
+                  </form>
+
+                  {/* Comments List */}
+                  <div className="flex flex-col divide-y mt-2" style={{ borderColor: 'var(--border)' }}>
+                    {comments.length === 0 ? (
+                      <div className="py-12 text-center text-[13px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
+                        No responses yet. Be the first to reply.
+                      </div>
+                    ) : (
+                      comments.map((comment) => (
+                        <div 
+                          key={comment.id} 
+                          className="py-4 flex flex-col gap-2 text-left border-b last:border-b-0"
+                          style={{ borderColor: 'var(--border)' }}
+                        >
+                          {/* Comment Meta Row */}
+                          <div className="flex items-center justify-between text-[11px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
+                            <span className="font-medium" style={{ color: 'var(--text-secondary)' }}>{comment.author_name}</span>
+                            <span className="whitespace-nowrap shrink-0">{comment.created_at}</span>
+                          </div>
+
+                          {/* Moderator Reveal: Always below Anonymous Student */}
+                          {isAdmin && (comment.real_author_name || comment.real_author_email) && (
+                            <div className="flex items-center">
+                              <span 
+                                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border"
+                                style={{ 
+                                  backgroundColor: 'rgba(255, 90, 31, 0.08)', 
+                                  borderColor: 'rgba(255, 90, 31, 0.25)',
+                                  color: 'var(--accent)'
+                                }}
+                                title="Campus Moderator confidential identity reveal"
+                              >
+                                <IconLock size={10} />
+                                <span>mod reveal:</span>
+                                <strong className="text-[11.5px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                                  {comment.real_author_name}
+                                </strong>
+                                {comment.real_author_email && (
+                                  <span style={{ color: 'var(--text-secondary)' }}>
+                                    ({comment.real_author_email})
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          )}
+
+                          <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-primary)' }}>
+                            {comment.content}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
             </section>
 
           </div>
