@@ -1,84 +1,306 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchPosts } from '../../services/db';
-import { IconAlert, IconLock } from '../icons/Icons';
+import { fetchTodayStats } from '../../services/db';
+import { IconLock } from '../icons/Icons';
 
-export default function TrendingSidebar() {
-  const [trendingPosts, setTrendingPosts] = useState([]);
+/**
+ * TrendingSidebar — Right Panel (320px)
+ * 
+ * 1. "Today so far": total confessions, total likes, most liked confession with link
+ * 2. "Categories": clean topic links
+ * 3. "Anonymous by design": privacy guarantee with lock icon
+ * 4. Keyboard shortcuts guide
+ */
+export default function TrendingSidebar({ onSelectConfession = null }) {
+  const [stats, setStats] = useState({
+    totalConfessions: 8,
+    totalLikes: 609,
+    mostLiked: null
+  });
 
   useEffect(() => {
-    async function loadTrending() {
+    async function loadStats() {
       try {
-        const posts = await fetchPosts({ sort: 'trending_today' });
-        setTrendingPosts(posts.slice(0, 4));
+        const data = await fetchTodayStats();
+        setStats(data);
       } catch (e) {
-        console.error(e);
+        console.error('Failed to load today stats', e);
       }
     }
-    loadTrending();
+    loadStats();
   }, []);
 
+  const categories = [
+    { name: 'Crushes', count: 3 },
+    { name: 'Confessions', count: 2 },
+    { name: 'Lost & Found', count: 1 },
+    { name: 'Late Night', count: 1 },
+    { name: 'Academics', count: 1 }
+  ];
+
+  const getShortenedQuote = (text, maxLength = 95) => {
+    if (!text) return '';
+    const trimmed = text.trim();
+    if (trimmed.length <= maxLength) return trimmed;
+    const sub = trimmed.slice(0, maxLength);
+    const lastSpace = sub.lastIndexOf(' ');
+    return (lastSpace > 50 ? sub.slice(0, lastSpace) : sub).trim() + '…';
+  };
+
   return (
-    <aside className="hidden lg:flex flex-col w-72 h-screen sticky top-0 p-4 border-l border-[#2A2A2F] bg-[#151518]/50 gap-5 shrink-0 overflow-y-auto text-left select-none">
-      {/* Trending Section */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-[#A0A0A8]">
-            Trending on Campus
-          </h3>
-          <span className="text-[10px] text-[#777780]">Today</span>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          {trendingPosts.map((post) => (
-            <Link
-              key={post.id}
-              to={`/post/${post.post_number}`}
-              className="p-2.5 rounded-lg bg-[#151518] border border-[#2A2A2F] hover:border-[#3A3A42] hover:bg-[#1C1C20] transition-smooth flex flex-col gap-1 text-left"
+    <aside 
+      className="hidden lg:flex flex-col w-[320px] h-screen sticky top-0 px-5 py-6 border-l shrink-0 overflow-hidden text-left select-none justify-between"
+      style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)' }}
+    >
+      
+      {/* Top Container */}
+      <div className="flex flex-col">
+        {/* SECTION 1: TODAY SO FAR / STATS */}
+        <div className="flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <span 
+              className="font-mono text-[11px] uppercase tracking-[0.08em]"
+              style={{ color: 'var(--text-tertiary)' }}
             >
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-[#F07845] font-mono font-medium">{post.post_number_formatted}</span>
-                <span className="text-[#777780]">{post.category}</span>
+              Today so far
+            </span>
+            <span 
+              className="font-mono text-[11px]"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              Daily overview
+            </span>
+          </div>
+
+          <div className="flex items-center gap-6 py-2">
+            <div>
+              <div 
+                className="font-sans text-[28px] font-semibold tabular-nums leading-none"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                {stats.totalConfessions}
               </div>
-              <p className="text-xs font-medium text-[#F0F0F2] line-clamp-2 leading-snug">
-                {post.title}
-              </p>
-              <div className="flex items-center gap-3 text-[11px] text-[#777780] mt-1">
-                <span>{post.likes} upvotes</span>
-                <span>&bull;</span>
-                <span>{post.comment_count} replies</span>
+              <div 
+                className="font-mono text-[11px] uppercase tracking-wider mt-1"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                Confessions
               </div>
-            </Link>
-          ))}
+            </div>
+            <div className="w-[1px] h-8" style={{ backgroundColor: 'var(--border)' }} />
+            <div>
+              <div 
+                className="font-sans text-[28px] font-semibold tabular-nums leading-none"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                {stats.totalLikes}
+              </div>
+              <div 
+                className="font-mono text-[11px] uppercase tracking-wider mt-1"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                Total Likes
+              </div>
+            </div>
+          </div>
+
+          {/* Most liked today */}
+          {stats.mostLiked && (
+            <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+              <span 
+                className="font-mono text-[11px] uppercase tracking-wider block mb-1.5"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                Most liked today ({stats.mostLiked.likes} likes)
+              </span>
+              <Link
+                to={`/post/${stats.mostLiked.id}`}
+                onClick={(e) => {
+                  if (onSelectConfession) {
+                    e.preventDefault();
+                    onSelectConfession(stats.mostLiked.id);
+                  }
+                }}
+                className="font-confession text-[14px] leading-[1.45] block transition-colors group cursor-pointer"
+                style={{ 
+                  color: 'var(--text-secondary)',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = 'var(--text-primary)';
+                  e.currentTarget.style.textDecoration = 'underline';
+                  e.currentTarget.style.textUnderlineOffset = '3px';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = 'var(--text-secondary)';
+                  e.currentTarget.style.textDecoration = 'none';
+                }}
+                title="View most liked confession"
+              >
+                "{getShortenedQuote(stats.mostLiked.body || stats.mostLiked.content, 95)}"
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {/* SECTION 2: CATEGORIES (24px spacing, plain rows 40px high) */}
+        <div className="flex flex-col mt-6 pt-6 border-t" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center justify-between mb-2">
+            <span 
+              className="font-mono text-[11px] uppercase tracking-[0.08em]"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              Categories
+            </span>
+            <span 
+              className="font-mono text-[11px]"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              today
+            </span>
+          </div>
+
+          <div className="flex flex-col">
+            {categories.map((cat, idx) => (
+              <Link
+                key={cat.name}
+                to={`/search?q=${cat.name}`}
+                className={`h-[40px] px-2 flex items-center justify-between transition-colors rounded-[6px] ${
+                  idx === categories.length - 1 ? '' : 'border-b'
+                }`}
+                style={{ borderColor: 'var(--border)' }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <span 
+                  className="font-sans text-[14px]"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  {cat.name}
+                </span>
+                <span 
+                  className="font-mono text-[13px] tabular-nums"
+                  style={{ color: 'var(--text-tertiary)' }}
+                >
+                  {cat.count}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* SECTION 3: ANONYMOUS BY DESIGN (24px spacing) */}
+        <div className="flex flex-col mt-6 pt-6 border-t" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-2 mb-2">
+            <IconLock size={14} className="shrink-0" style={{ color: 'var(--text-secondary)' }} />
+            <span 
+              className="font-sans text-[14px] font-semibold"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Anonymous by design
+            </span>
+          </div>
+          <p 
+            className="text-[13px] leading-[1.6] font-sans"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            SpillATea never exposes real student names, emails, or account IDs to other students. All confessions are strictly anonymous to ensure open campus conversation.
+          </p>
         </div>
       </div>
 
-      {/* Community Safety Reminder */}
-      <div className="p-3.5 rounded-xl bg-[#1C1C20] border border-[#2A2A2F] flex flex-col gap-2">
-        <div className="flex items-center gap-2 text-xs font-semibold text-[#F0F0F2]">
-          <IconLock size={15} className="text-[#F07845]" />
-          <span>Anonymous by Design</span>
+      {/* KEYBOARD SHORTCUTS HINT: pinned to the bottom with a 1px --border above */}
+      <div className="mt-6 pt-5 border-t" style={{ borderColor: 'var(--border)' }}>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+          <div className="flex items-center gap-2">
+            <kbd 
+              className="font-mono text-[11px] px-1.5 py-0.5 rounded-[4px] border"
+              style={{ 
+                backgroundColor: 'var(--surface-sunken)', 
+                borderColor: 'var(--border)', 
+                color: 'var(--text-secondary)' 
+              }}
+            >
+              J / K
+            </kbd>
+            <span className="font-sans text-[12px]" style={{ color: 'var(--text-tertiary)' }}>next / prev</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <kbd 
+              className="font-mono text-[11px] px-1.5 py-0.5 rounded-[4px] border"
+              style={{ 
+                backgroundColor: 'var(--surface-sunken)', 
+                borderColor: 'var(--border)', 
+                color: 'var(--text-secondary)' 
+              }}
+            >
+              L
+            </kbd>
+            <span className="font-sans text-[12px]" style={{ color: 'var(--text-tertiary)' }}>like</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <kbd 
+              className="font-mono text-[11px] px-1.5 py-0.5 rounded-[4px] border"
+              style={{ 
+                backgroundColor: 'var(--surface-sunken)', 
+                borderColor: 'var(--border)', 
+                color: 'var(--text-secondary)' 
+              }}
+            >
+              C
+            </kbd>
+            <span className="font-sans text-[12px]" style={{ color: 'var(--text-tertiary)' }}>comment</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <kbd 
+              className="font-mono text-[11px] px-1.5 py-0.5 rounded-[4px] border"
+              style={{ 
+                backgroundColor: 'var(--surface-sunken)', 
+                borderColor: 'var(--border)', 
+                color: 'var(--text-secondary)' 
+              }}
+            >
+              N
+            </kbd>
+            <span className="font-sans text-[12px]" style={{ color: 'var(--text-tertiary)' }}>new spill</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <kbd 
+              className="font-mono text-[11px] px-1.5 py-0.5 rounded-[4px] border"
+              style={{ 
+                backgroundColor: 'var(--surface-sunken)', 
+                borderColor: 'var(--border)', 
+                color: 'var(--text-secondary)' 
+              }}
+            >
+              /
+            </kbd>
+            <span className="font-sans text-[12px]" style={{ color: 'var(--text-tertiary)' }}>search</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <kbd 
+              className="font-mono text-[11px] px-1.5 py-0.5 rounded-[4px] border"
+              style={{ 
+                backgroundColor: 'var(--surface-sunken)', 
+                borderColor: 'var(--border)', 
+                color: 'var(--text-secondary)' 
+              }}
+            >
+              ⌘K
+            </kbd>
+            <span className="font-sans text-[12px]" style={{ color: 'var(--text-tertiary)' }}>palette</span>
+          </div>
         </div>
-        <p className="text-[11px] text-[#A0A0A8] leading-relaxed">
-          Your student identity is kept private from peers on anonymous posts. Content is moderated to keep our campus community safe and civil.
-        </p>
-        <Link
-          to="/terms"
-          className="text-[11px] font-medium text-[#F07845] hover:underline mt-1"
-        >
-          Community Guidelines &rarr;
-        </Link>
       </div>
 
-      {/* Footer info */}
-      <div className="text-[11px] text-[#777780] flex flex-col gap-1 mt-auto pt-4 border-t border-[#2A2A2F]">
-        <p>CampusEcho Platform</p>
-        <div className="flex items-center gap-2">
-          <Link to="/terms" className="hover:text-[#A0A0A8]">Terms</Link>
-          <span>&bull;</span>
-          <Link to="/privacy" className="hover:text-[#A0A0A8]">Privacy Policy</Link>
-        </div>
-      </div>
     </aside>
   );
 }

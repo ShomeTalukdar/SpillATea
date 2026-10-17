@@ -4,13 +4,22 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CampusEcho | Anonymous College Community</title>
-    <meta name="description" content="CampusEcho is a modern, student-first anonymous college community platform for candid discussions, campus confessions, and peer advice." />
+    <title>SpillATea | Anonymous College Community</title>
+    <meta name="description" content="SpillATea is a student-first anonymous college community platform for candid discussions, campus confessions, and peer advice." />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&family=Sigmar+One&display=swap" rel="stylesheet">
+    <script>
+      (function() {
+        try {
+          var t = localStorage.getItem('spillatea_theme') || 'dark';
+          document.documentElement.setAttribute('data-theme', t);
+          document.documentElement.classList.add(t);
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body class="bg-[#0D0D0F] text-[#F0F0F2] min-h-screen selection:bg-[#F07845]/20 selection:text-[#F0F0F2]">
+  <body class="bg-[#0A0A0A] text-[#EDEDED] min-h-screen selection:bg-[#FF5A1F]/30 selection:text-white">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
