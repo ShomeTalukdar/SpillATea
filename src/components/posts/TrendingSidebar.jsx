@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchTodayStats } from '../../services/db';
+import { fetchTodayStats, checkBackendStatus } from '../../services/db';
 import { IconLock } from '../icons/Icons';
 
 /**
@@ -17,6 +17,7 @@ export default function TrendingSidebar({ onSelectConfession = null }) {
     totalLikes: 609,
     mostLiked: null
   });
+  const [dbStatus, setDbStatus] = useState({ isAvailable: false, isDbConnected: false });
 
   useEffect(() => {
     async function loadStats() {
@@ -27,7 +28,14 @@ export default function TrendingSidebar({ onSelectConfession = null }) {
         console.error('Failed to load today stats', e);
       }
     }
+    async function loadDbStatus() {
+      try {
+        const status = await checkBackendStatus();
+        setDbStatus(status);
+      } catch (e) {}
+    }
     loadStats();
+    loadDbStatus();
   }, []);
 
   const categories = [
@@ -210,10 +218,29 @@ export default function TrendingSidebar({ onSelectConfession = null }) {
             SpillATea never exposes real student names, emails, or account IDs to other students. All confessions are strictly anonymous to ensure open campus conversation.
           </p>
         </div>
+
+        {/* DATABASE ENGINE STATUS */}
+        <div 
+          className="mt-4 px-3 py-2 rounded-md border flex items-center justify-between text-[11px] font-mono"
+          style={{ 
+            backgroundColor: 'var(--surface-sunken)', 
+            borderColor: 'var(--border)' 
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <span 
+              className={`w-1.5 h-1.5 rounded-full ${dbStatus.isDbConnected ? 'bg-[#10B981]' : 'bg-[#F06A3A]'}`} 
+            />
+            <span style={{ color: 'var(--text-secondary)' }}>ENGINE</span>
+          </div>
+          <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+            {dbStatus.isDbConnected ? 'MongoDB Atlas' : dbStatus.isAvailable ? 'Express (Connecting)' : 'MongoDB Ready'}
+          </span>
+        </div>
       </div>
 
       {/* KEYBOARD SHORTCUTS HINT: pinned to the bottom with a 1px --border above */}
-      <div className="mt-6 pt-5 border-t" style={{ borderColor: 'var(--border)' }}>
+      <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
         <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
           <div className="flex items-center gap-2">
             <kbd 

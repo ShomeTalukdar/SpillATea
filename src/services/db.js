@@ -3,6 +3,11 @@
 
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { validateAndModeratePost, moderateText } from './moderation';
+import { api } from './api';
+
+export async function checkBackendStatus() {
+  return api.checkHealth();
+}
 
 const STORAGE_KEY_CONFESSIONS = 'spillatea_confessions_v11';
 const STORAGE_KEY_COMMENTS = 'spillatea_comments_v6';
@@ -711,12 +716,45 @@ export function setCurrentUser(user) {
 
 // Fetch Confessions for Daily Board
 export async function fetchConfessions({ day = 'today', date = null, category = 'all', searchQuery = '' } = {}) {
-  const all = getStoredConfessions();
   const likesMap = getStoredLikes();
   const savedMap = getStoredSaved();
   const currentUser = getCurrentUser();
   const isModerator = currentUser && currentUser.role === 'admin';
+  const myPostIds = getMyCreatedPostIds();
 
+  // 1. Try Express & MongoDB API
+  try {
+    const apiRes = await api.getConfessions({
+      day: date || (day === 'this_week' ? 'all' : day),
+      category: category === 'all' ? undefined : category,
+      search: searchQuery
+    });
+    if (apiRes && apiRes.success && Array.isArray(apiRes.data) && apiRes.data.length > 0) {
+      let results = apiRes.data;
+      if (date) {
+        results = results.filter(c => c.date_key === date);
+      }
+      return results.map(c => {
+        const isAuthor = myPostIds.includes(c.id) || (currentUser && c.author_id === currentUser.id);
+        return {
+          ...c,
+          is_liked: Boolean(likesMap[c.id]),
+          is_saved: Boolean(savedMap[c.id]),
+          is_own: isAuthor,
+          can_delete: Boolean(isModerator || isAuthor),
+          content: c.body,
+          title: c.to_target || (c.body ? c.body.substring(0, 40) + '...' : 'Confession'),
+          post_number_formatted: c.confession_number,
+          post_number: parseInt(c.confession_number?.replace(/\D/g, '') || '0', 10)
+        };
+      });
+    }
+  } catch (err) {
+    // Graceful fallback to local storage
+  }
+
+  // 2. Local Fallback
+  const all = getStoredConfessions();
   let filtered = all.filter(c => c.status === 'published');
 
   if (date) {
@@ -755,7 +793,6 @@ export async function fetchConfessions({ day = 'today', date = null, category = 
     { name: 'Lucas Wright', email: 'lucas.wright@student.college.edu' }
   ];
 
-  const myPostIds = getMyCreatedPostIds();
   const allComments = getStoredComments();
   const commentCounts = {};
   allComments.forEach(cm => {
@@ -858,6 +895,9 @@ export async function toggleLikeConfession(confessionId) {
   saveStoredConfessions(confessions);
   saveStoredLikes(likesMap);
 
+  // Sync with MongoDB backend
+  api.likeConfession(confessionId, !currentlyLiked ? 1 : -1).catch(() => {});
+
   return {
     success: true,
     is_liked: !currentlyLiked,
@@ -949,6 +989,53 @@ export async function createConfession({ body, to_target, category = 'Confession
     return { success: false, error: modResult.errors.join(' ') };
   }
 
+  // 1. Try Express & MongoDB API
+  try {
+    const apiRes = await api.createConfession({
+      body: cleanBody,
+      to_target: (to_target || '').trim() || null,
+      category,
+      is_anonymous: Boolean(is_anonymous),
+      author_name: is_anonymous ? 'Anonymous Student' : currentUser.name,
+      real_author_name: currentUser.name,
+      real_author_email: currentUser.email
+    });
+
+    if (apiRes && apiRes.success && apiRes.data) {
+      const created = apiRes.data;
+      const myPosts = getMyCreatedPostIds();
+      if (!myPosts.includes(created.id)) {
+        myPosts.unshift(created.id);
+        saveMyCreatedPostIds(myPosts);
+      }
+      const likesMap = getStoredLikes();
+      likesMap[created.id] = true;
+      saveStoredLikes(likesMap);
+
+      const confessionPayload = {
+        ...created,
+        is_liked: true,
+        is_saved: false,
+        is_maybe_me: false,
+        is_own: true,
+        can_delete: true,
+        content: created.body,
+        title: created.to_target || created.body.substring(0, 40) + '...',
+        post_number_formatted: created.confession_number,
+        post_number: parseInt(created.confession_number?.replace(/\D/g, '') || '0', 10)
+      };
+
+      return {
+        success: true,
+        confession: confessionPayload,
+        post: confessionPayload
+      };
+    }
+  } catch (err) {
+    console.warn('[SpillATea] API unavailable, saving confession locally:', err.message);
+  }
+
+  // 2. Local Fallback
   const all = getStoredConfessions();
   const todayItems = all.filter(c => c.day_key === 'today');
   const nextNum = todayItems.length + 1;
@@ -1019,6 +1106,16 @@ export async function createConfession({ body, to_target, category = 'Confession
 
 // Fetch comments
 export async function fetchComments(confessionId) {
+  try {
+    const apiRes = await api.getComments(confessionId);
+    if (apiRes && apiRes.success && Array.isArray(apiRes.data) && apiRes.data.length > 0) {
+      return apiRes.data.map(cm => ({
+        ...cm,
+        content: cm.body || cm.content
+      }));
+    }
+  } catch (err) {}
+
   const comments = getStoredComments();
   const filtered = comments.filter(c => c.post_id === confessionId);
   const currentUser = getCurrentUser();
@@ -1039,6 +1136,26 @@ export async function addComment({ postId, content, is_anonymous = true }) {
   if (!trimmed) return { success: false, error: 'Comment cannot be empty.' };
 
   const mod = moderateText(trimmed);
+
+  try {
+    const apiRes = await api.addComment(postId, {
+      body: mod.maskedText,
+      author_name: is_anonymous ? 'Anonymous Student' : currentUser.name,
+      author_role: 'Student'
+    });
+    if (apiRes && apiRes.success && apiRes.data) {
+      return {
+        success: true,
+        comment: {
+          ...apiRes.data,
+          content: apiRes.data.body
+        }
+      };
+    }
+  } catch (err) {
+    console.warn('[SpillATea] API unavailable, storing comment locally:', err.message);
+  }
+
   const comments = getStoredComments();
 
   const newComment = {
@@ -1075,6 +1192,32 @@ export async function fetchPosts(params = {}) {
 
 export async function fetchPostById(id) {
   if (!id) return null;
+
+  const likes = getStoredLikes();
+  const saved = getStoredSaved();
+  const user = getCurrentUser();
+  const isMod = user && user.role === 'admin';
+  const myPostIds = getMyCreatedPostIds();
+
+  // Try Express & MongoDB API
+  try {
+    const apiRes = await api.getConfessionById(id);
+    if (apiRes && apiRes.success && apiRes.data) {
+      const c = apiRes.data;
+      const isAuthor = myPostIds.includes(c.id) || (user && user.id === c.author_id);
+      return {
+        ...c,
+        is_liked: Boolean(likes[c.id]),
+        is_saved: Boolean(saved[c.id]),
+        is_own: isAuthor,
+        can_delete: Boolean(isMod || isAuthor),
+        content: c.body,
+        title: c.to_target || (c.body ? c.body.substring(0, 40) + '...' : 'Confession'),
+        post_number_formatted: c.confession_number
+      };
+    }
+  } catch (err) {}
+
   const all = getStoredConfessions();
   const rawId = String(id).trim().toLowerCase();
   const digitsOnly = rawId.replace(/\D/g, '');
@@ -1088,9 +1231,6 @@ export async function fetchPostById(id) {
   });
 
   if (!c) return null;
-  const likes = getStoredLikes();
-  const user = getCurrentUser();
-  const isMod = user && user.role === 'admin';
 
   const idx = all.findIndex(item => item.id === c.id);
   const fallbackNames = [
@@ -1107,7 +1247,6 @@ export async function fetchPostById(id) {
   const realName = c.real_author_name || fallback.name;
   const realEmail = c.real_author_email || fallback.email;
 
-  const myPostIds = getMyCreatedPostIds();
   const isAuthor = myPostIds.includes(c.id) || (user && (c.author_id === user.id || c.real_author_name === user.name || c.real_author_email === user.email));
   const allComments = getStoredComments();
   const postComments = allComments.filter(cm => cm.post_id === c.id);
@@ -1144,6 +1283,9 @@ export async function deleteConfession(confessionId) {
   if (!isModerator && !isAuthor) {
     return { success: false, error: 'Unauthorized: Only the author or a campus moderator can delete this confession.' };
   }
+
+  // Call Express MongoDB API
+  api.deleteConfession(confessionId).catch(() => {});
 
   // Delete from stored confessions
   all.splice(idx, 1);
@@ -1202,6 +1344,16 @@ export async function secureRevealAuthorIdentity(postId) {
     };
   }
 
+  // Try Express & MongoDB server-side reveal with audit trail
+  try {
+    const apiRes = await api.revealIdentity(postId, currentUser.name, currentUser.role);
+    if (apiRes && apiRes.success && apiRes.data) {
+      return apiRes;
+    }
+  } catch (err) {
+    console.warn('[SpillATea] API unavailable, running local secure reveal:', err.message);
+  }
+
   const all = getStoredConfessions();
   const item = all.find(c => c.id === postId || c.confession_number === postId);
   if (!item) return { success: false, error: 'Confession not found.' };
@@ -1238,13 +1390,32 @@ export async function secureRevealAuthorIdentity(postId) {
 export async function adminLookupAuthor(id) {
   return secureRevealAuthorIdentity(id);
 }
+
 export async function fetchAdminAuditLogs() {
+  try {
+    const apiRes = await api.getAuditLogs();
+    if (apiRes && apiRes.success && Array.isArray(apiRes.data) && apiRes.data.length > 0) {
+      return apiRes.data;
+    }
+  } catch (err) {}
   return JSON.parse(localStorage.getItem(STORAGE_KEY_AUDIT) || '[]');
 }
+
 export async function fetchPendingReports() {
+  try {
+    const apiRes = await api.getReports('pending');
+    if (apiRes && apiRes.success && Array.isArray(apiRes.data) && apiRes.data.length > 0) {
+      return apiRes.data;
+    }
+  } catch (err) {}
   return JSON.parse(localStorage.getItem(STORAGE_KEY_REPORTS) || '[]');
 }
+
 export async function submitPostReport({ postId, reason, notes }) {
+  try {
+    await api.submitReport({ postId, reason, notes });
+  } catch (err) {}
+
   const reports = JSON.parse(localStorage.getItem(STORAGE_KEY_REPORTS) || '[]');
   reports.unshift({
     id: `rep-${Date.now()}`,
@@ -1271,6 +1442,10 @@ export async function fetchAdminReportQueue() {
 }
 
 export async function adminTakeAction({ reportId, action, notes }) {
+  try {
+    await api.takeReportAction(reportId, action, notes);
+  } catch (err) {}
+
   const reports = JSON.parse(localStorage.getItem(STORAGE_KEY_REPORTS) || '[]');
   const updated = reports.map(r => r.id === reportId ? { ...r, status: action, resolution_notes: notes } : r);
   localStorage.setItem(STORAGE_KEY_REPORTS, JSON.stringify(updated));
